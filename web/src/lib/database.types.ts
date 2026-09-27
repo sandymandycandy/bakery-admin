@@ -1,0 +1,829 @@
+// Generated from the Supabase schema (generic helpers condensed). Regenerate after migrations; do not edit by hand.
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+type OrderRow = {
+  access_token: string
+  closed_at: string | null
+  closed_by: string | null
+  closed_reason: string | null
+  completed_at: string | null
+  confirmed_at: string | null
+  confirmed_by: string | null
+  confirmed_due_at: string | null
+  created_at: string
+  created_by: string | null
+  customer_id: string | null
+  customer_name: string | null
+  customer_notes: string | null
+  customer_phone: string | null
+  discount_by: string | null
+  discount_paise: number
+  discount_reason: string | null
+  due_at: string | null
+  fulfillment_type: string
+  id: string
+  idempotency_key: string
+  internal_notes: string | null
+  is_immediate: boolean
+  order_number: number
+  reference: string | null
+  requested_due_at: string
+  source: Database["public"]["Enums"]["order_source"]
+  status: Database["public"]["Enums"]["order_status"]
+  subtotal_paise: number
+  tax_paise: number
+  total_paise: number
+  updated_at: string
+  version: number
+}
+
+type PaymentRow = {
+  amount_paise: number
+  id: string
+  idempotency_key: string
+  kind: Database["public"]["Enums"]["payment_kind"]
+  method: Database["public"]["Enums"]["payment_method"]
+  note: string | null
+  order_id: string
+  recorded_at: string
+  recorded_by: string | null
+  reference: string | null
+}
+
+type BillRow = {
+  bill_number: string
+  business: Json
+  cgst_paise: number
+  customer_name: string | null
+  customer_phone: string | null
+  discount_paise: number
+  financial_year: string
+  id: string
+  issued_at: string
+  issued_by: string | null
+  lines: Json
+  order_id: string
+  sequence_number: number
+  sgst_paise: number
+  subtotal_paise: number
+  taxable_paise: number
+  total_paise: number
+}
+
+type CreditNoteRow = {
+  bill_id: string
+  cgst_paise: number
+  credit_note_number: string
+  financial_year: string
+  id: string
+  idempotency_key: string
+  issued_at: string
+  issued_by: string | null
+  reason: string
+  sequence_number: number
+  sgst_paise: number
+  taxable_paise: number
+  total_paise: number
+}
+
+type Nullable<T> = { [K in keyof T]: T[K] | null }
+type RpcReturnsOrder = {
+  Returns: OrderRow
+  SetofOptions: { from: "*"; to: "orders"; isOneToOne: true; isSetofReturn: false }
+}
+
+export type Database = {
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
+  }
+  public: {
+    Tables: {
+      audit_events: {
+        Row: {
+          action: string
+          actor_id: string | null
+          id: number
+          new_data: Json | null
+          occurred_at: string
+          old_data: Json | null
+          record_id: string
+          table_name: string
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          id?: never
+          new_data?: Json | null
+          occurred_at?: string
+          old_data?: Json | null
+          record_id: string
+          table_name: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          id?: never
+          new_data?: Json | null
+          occurred_at?: string
+          old_data?: Json | null
+          record_id?: string
+          table_name?: string
+        }
+        Relationships: []
+      }
+      business_hours: {
+        Row: {
+          closes_at: string
+          is_closed: boolean
+          opens_at: string
+          updated_at: string
+          weekday: number
+        }
+        Insert: {
+          closes_at: string
+          is_closed?: boolean
+          opens_at: string
+          updated_at?: string
+          weekday: number
+        }
+        Update: {
+          closes_at?: string
+          is_closed?: boolean
+          opens_at?: string
+          updated_at?: string
+          weekday?: number
+        }
+        Relationships: []
+      }
+      business_settings: {
+        Row: {
+          address: string | null
+          bill_prefix: string
+          business_name: string
+          counter_discount_limit_bps: number
+          currency: string
+          email: string | null
+          fssai_licence: string | null
+          gstin: string | null
+          id: boolean
+          phone: string | null
+          timezone: string
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          business_name?: string
+          currency?: string
+          email?: string | null
+          fssai_licence?: string | null
+          gstin?: string | null
+          id?: boolean
+          phone?: string | null
+          timezone?: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          bill_prefix?: string
+          counter_discount_limit_bps?: number
+          business_name?: string
+          currency?: string
+          email?: string | null
+          fssai_licence?: string | null
+          gstin?: string | null
+          id?: boolean
+          phone?: string | null
+          timezone?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      categories: {
+        Row: {
+          created_at: string
+          default_kitchen_id: string | null
+          id: string
+          is_active: boolean
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          default_kitchen_id?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          default_kitchen_id?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "categories_default_kitchen_id_fkey"
+            columns: ["default_kitchen_id"]
+            isOneToOne: false
+            referencedRelation: "kitchens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bills: {
+        Row: BillRow
+        Insert: never
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: "bills_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: true
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      credit_notes: {
+        Row: CreditNoteRow
+        Insert: never
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: "credit_notes_bill_id_fkey"
+            columns: ["bill_id"]
+            isOneToOne: false
+            referencedRelation: "bills"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      closures: {
+        Row: {
+          closed_on: string
+          created_at: string
+          reason: string
+        }
+        Insert: {
+          closed_on: string
+          created_at?: string
+          reason: string
+        }
+        Update: {
+          closed_on?: string
+          created_at?: string
+          reason?: string
+        }
+        Relationships: []
+      }
+      customers: {
+        Row: {
+          blocked_reason: string | null
+          created_at: string
+          email: string | null
+          full_name: string
+          id: string
+          is_blocked: boolean
+          no_show_count: number
+          notes: string | null
+          phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          blocked_reason?: string | null
+          created_at?: string
+          email?: string | null
+          full_name: string
+          id?: string
+          is_blocked?: boolean
+          no_show_count?: number
+          notes?: string | null
+          phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          blocked_reason?: string | null
+          created_at?: string
+          email?: string | null
+          full_name?: string
+          id?: string
+          is_blocked?: boolean
+          no_show_count?: number
+          notes?: string | null
+          phone?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      kitchens: {
+        Row: {
+          code: string
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      order_events: {
+        Row: {
+          actor_id: string | null
+          data: Json
+          event_type: string
+          id: number
+          occurred_at: string
+          order_id: string
+          reason: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          data?: Json
+          event_type: string
+          id?: never
+          occurred_at?: string
+          order_id: string
+          reason?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          data?: Json
+          event_type?: string
+          id?: never
+          occurred_at?: string
+          order_id?: string
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_events_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_items: {
+        Row: {
+          allergens: string[]
+          cancelled_quantity: number
+          contains_egg: boolean
+          created_at: string
+          discount_paise: number
+          hsn_code: string | null
+          id: string
+          is_eggless: boolean
+          is_veg: boolean
+          kitchen_id: string | null
+          lead_time_minutes: number
+          line_no: number
+          line_total_paise: number
+          notes: string | null
+          order_id: string
+          prep_type: Database["public"]["Enums"]["prep_type"]
+          product_id: string | null
+          product_name: string
+          quantity: number
+          tax_paise: number
+          tax_rate_bps: number
+          unit_price_paise: number
+          variant_id: string | null
+          variant_name: string
+        }
+        Insert: never
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: "order_items_kitchen_id_fkey"
+            columns: ["kitchen_id"]
+            isOneToOne: false
+            referencedRelation: "kitchens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "product_variants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: OrderRow
+        Insert: never
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: "orders_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payments: {
+        Row: PaymentRow
+        Insert: never
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: "payments_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_variants: {
+        Row: {
+          archived_at: string | null
+          created_at: string
+          id: string
+          is_available: boolean
+          is_eggless: boolean
+          kitchen_id: string | null
+          lead_time_minutes: number
+          name: string
+          price_paise: number
+          product_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          archived_at?: string | null
+          created_at?: string
+          id?: string
+          is_available?: boolean
+          is_eggless?: boolean
+          kitchen_id?: string | null
+          lead_time_minutes?: number
+          name: string
+          price_paise: number
+          product_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          archived_at?: string | null
+          created_at?: string
+          id?: string
+          is_available?: boolean
+          is_eggless?: boolean
+          kitchen_id?: string | null
+          lead_time_minutes?: number
+          name?: string
+          price_paise?: number
+          product_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_variants_kitchen_id_fkey"
+            columns: ["kitchen_id"]
+            isOneToOne: false
+            referencedRelation: "kitchens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_variants_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      products: {
+        Row: {
+          allergens: string[]
+          archived_at: string | null
+          category_id: string
+          contains_egg: boolean
+          created_at: string
+          description: string | null
+          hsn_code: string | null
+          id: string
+          image_url: string | null
+          is_available: boolean
+          is_veg: boolean
+          name: string
+          prep_type: Database["public"]["Enums"]["prep_type"]
+          tax_rate_bps: number
+          updated_at: string
+        }
+        Insert: {
+          allergens?: string[]
+          archived_at?: string | null
+          category_id: string
+          contains_egg?: boolean
+          created_at?: string
+          description?: string | null
+          hsn_code?: string | null
+          id?: string
+          image_url?: string | null
+          is_available?: boolean
+          is_veg?: boolean
+          name: string
+          prep_type?: Database["public"]["Enums"]["prep_type"]
+          tax_rate_bps?: number
+          updated_at?: string
+        }
+        Update: {
+          allergens?: string[]
+          archived_at?: string | null
+          category_id?: string
+          contains_egg?: boolean
+          created_at?: string
+          description?: string | null
+          hsn_code?: string | null
+          id?: string
+          image_url?: string | null
+          is_available?: boolean
+          is_veg?: boolean
+          name?: string
+          prep_type?: Database["public"]["Enums"]["prep_type"]
+          tax_rate_bps?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "products_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff_kitchens: {
+        Row: {
+          created_at: string
+          kitchen_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          kitchen_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          kitchen_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_kitchens_kitchen_id_fkey"
+            columns: ["kitchen_id"]
+            isOneToOne: false
+            referencedRelation: "kitchens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_kitchens_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "staff_profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      staff_profiles: {
+        Row: {
+          created_at: string
+          full_name: string
+          is_active: boolean
+          role: Database["public"]["Enums"]["staff_role"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          full_name: string
+          is_active?: boolean
+          role: Database["public"]["Enums"]["staff_role"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          full_name?: string
+          is_active?: boolean
+          role?: Database["public"]["Enums"]["staff_role"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+    }
+    Views: {
+      order_summaries: {
+        Row: Nullable<OrderRow> & {
+          balance_paise: number | null
+          bill_id: string | null
+          bill_number: string | null
+          credited_paise: number | null
+          item_count: number | null
+          kitchen_ids: string[] | null
+          paid_paise: number | null
+          refunded_paise: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      unmapped_variants: {
+        Row: {
+          product_id: string | null
+          product_name: string | null
+          variant_id: string | null
+          variant_name: string | null
+        }
+        Relationships: []
+      }
+    }
+    Functions: {
+      apply_discount: RpcReturnsOrder & {
+        Args: { p_expected_version: number; p_kind: string; p_order_id: string; p_reason?: string; p_value: number }
+      }
+      counter_sale: {
+        Args: {
+          p_customer_name?: string
+          p_customer_phone?: string
+          p_discount_kind?: string
+          p_discount_reason?: string
+          p_discount_value?: number
+          p_idempotency_key: string
+          p_items: Json
+          p_payments: Json
+        }
+        Returns: Json
+      }
+      issue_bill: {
+        Args: { p_order_id: string }
+        Returns: BillRow
+        SetofOptions: { from: "*"; to: "bills"; isOneToOne: true; isSetofReturn: false }
+      }
+      issue_credit_note: {
+        Args: { p_amount_paise: number; p_bill_id: string; p_idempotency_key: string; p_reason: string }
+        Returns: CreditNoteRow
+        SetofOptions: { from: "*"; to: "credit_notes"; isOneToOne: true; isSetofReturn: false }
+      }
+      cancel_order: RpcReturnsOrder & {
+        Args: { p_expected_version: number; p_order_id: string; p_reason: string }
+      }
+      confirm_order: RpcReturnsOrder & {
+        Args: { p_expected_version: number; p_order_id: string; p_override_reason?: string }
+      }
+      create_order: RpcReturnsOrder & {
+        Args: {
+          p_confirm?: boolean
+          p_customer_name?: string
+          p_customer_notes?: string
+          p_customer_phone?: string
+          p_due_at?: string
+          p_idempotency_key: string
+          p_internal_notes?: string
+          p_items: Json
+          p_override_reason?: string
+          p_source: Database["public"]["Enums"]["order_source"]
+        }
+      }
+      record_payment: {
+        Args: {
+          p_amount_paise: number
+          p_idempotency_key: string
+          p_kind: Database["public"]["Enums"]["payment_kind"]
+          p_method: Database["public"]["Enums"]["payment_method"]
+          p_note?: string
+          p_order_id: string
+          p_reference?: string
+        }
+        Returns: PaymentRow
+        SetofOptions: { from: "*"; to: "payments"; isOneToOne: true; isSetofReturn: false }
+      }
+      reject_order: RpcReturnsOrder & {
+        Args: { p_expected_version: number; p_order_id: string; p_reason: string }
+      }
+      reschedule_order: RpcReturnsOrder & {
+        Args: {
+          p_due_at: string
+          p_expected_version: number
+          p_order_id: string
+          p_override_reason?: string
+          p_reason: string
+        }
+      }
+    }
+    Enums: {
+      order_source: "IN_STORE" | "ONLINE" | "CALL"
+      order_status:
+        | "draft"
+        | "pending_confirmation"
+        | "confirmed"
+        | "preparing"
+        | "ready"
+        | "completed"
+        | "rejected"
+        | "cancelled"
+      payment_kind: "payment" | "refund"
+      payment_method: "cash" | "upi" | "card" | "bank_transfer" | "other"
+      prep_type: "made_to_order" | "ready_stock"
+      staff_role: "admin" | "counter" | "chef"
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
+}
+
+type PublicSchema = Database["public"]
+
+export type Tables<T extends keyof (PublicSchema["Tables"] & PublicSchema["Views"])> =
+  (PublicSchema["Tables"] & PublicSchema["Views"])[T] extends { Row: infer R } ? R : never
+
+export type TablesInsert<T extends keyof PublicSchema["Tables"]> =
+  PublicSchema["Tables"][T]["Insert"]
+
+export type TablesUpdate<T extends keyof PublicSchema["Tables"]> =
+  PublicSchema["Tables"][T]["Update"]
+
+export type Enums<T extends keyof PublicSchema["Enums"]> = PublicSchema["Enums"][T]
+
+export const Constants = {
+  public: {
+    Enums: {
+      order_source: ["IN_STORE", "ONLINE", "CALL"],
+      order_status: [
+        "draft",
+        "pending_confirmation",
+        "confirmed",
+        "preparing",
+        "ready",
+        "completed",
+        "rejected",
+        "cancelled",
+      ],
+      payment_kind: ["payment", "refund"],
+      payment_method: ["cash", "upi", "card", "bank_transfer", "other"],
+      prep_type: ["made_to_order", "ready_stock"],
+      staff_role: ["admin", "counter", "chef"],
+    },
+  },
+} as const

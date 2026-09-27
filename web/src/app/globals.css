@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* Warm neutral staff UI. Final brand colours are still an open decision (PRD section 11). */
+  --color-canvas: #faf7f2;
+  --color-surface: #ffffff;
+  --color-ink: #2b2118;
+  --color-muted: #6f6257;
+  --color-line: #e7ded3;
+  --color-brand: #8a4b1f;
+  --color-brand-strong: #6d3a16;
+  --color-brand-soft: #f6ebe0;
+  --color-danger: #b42318;
+  --color-danger-soft: #fdecea;
+  --color-warn: #9a6700;
+  --color-warn-soft: #fff4d6;
+  --color-ok: #1f7a3a;
+  --color-ok-soft: #e7f5ec;
+  --color-veg: #1f7a3a;
+  --color-nonveg: #7a3b1f;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}

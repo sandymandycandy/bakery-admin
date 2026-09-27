@@ -1,0 +1,260 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { Alert, Button, Field, Input, Select } from "@/components/ui";
+import { OVERRIDABLE_KINDS, paymentMethodLabel, type OrderStatus, type PaymentMethod } from "@/lib/orders";
+import { paiseToRupeesInput } from "@/lib/money";
+import {
+  cancelOrderAction,
+  confirmOrderAction,
+  recordPaymentAction,
+  rejectOrderAction,
+  rescheduleOrderAction,
+} from "../actions";
+
+type Failure = { message: string; kind?: string };
+
+function ErrorBox({ error, onReload }: { error: Failure; onReload: () => void }) {
+  return (
+    <Alert tone="danger">
+      <p>{error.message}</p>
+      {error.kind === "conflict" && (
+        <Button variant="secondary" className="mt-2" onClick={onReload}>
+          Reload order
+        </Button>
+      )}
+    </Alert>
+  );
+}
+
+type Mode = null | "reject" | "cancel" | "reschedule" | "override";
+
+export function OrderActions({
+  orderId,
+  version,
+  status,
+  isAdmin,
+  canConfirm,
+  dueLocal,
+}: {
+  orderId: string;
+  version: number;
+  status: OrderStatus;
+  isAdmin: boolean;
+  canConfirm: boolean;
+  dueLocal: string;
+}) {
+  const router = useRouter();
+  const [mode, setMode] = useState<Mode>(null);
+  const [reason, setReason] = useState("");
+  const [override, setOverride] = useState("");
+  const [newDue, setNewDue] = useState(dueLocal);
+  const [error, setError] = useState<Failure | null>(null);
+  const [pending, start] = useTransition();
+
+  const awaiting = status === "draft" || status === "pending_confirmation";
+  const open = !["completed", "rejected", "cancelled"].includes(status);
+  const reschedulable = awaiting || status === "confirmed";
+
+  function run(action: () => Promise<{ ok?: boolean; message?: string; kind?: string }>) {
+    setError(null);
+    start(async () => {
+      const result = await action();
+      if (result.ok) {
+        setMode(null);
+        setReason("");
+        setOverride("");
+        router.refresh();
+      } else {
+        const failure = { message: result.message ?? "Something went wrong.", kind: result.kind };
+        setError(failure);
+        if (isAdmin && failure.kind && OVERRIDABLE_KINDS.has(failure.kind) && mode !== "reschedule") setMode("override");
+      }
+    });
+  }
+
+  if (!open) return null;
+
+  const overrideWanted = isAdmin && error?.kind && OVERRIDABLE_KINDS.has(error.kind);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-2">
+        {awaiting && canConfirm && (
+          <Button disabled={pending} onClick={() => run(() => confirmOrderAction({ orderId, version }))}>
+            {pending && mode === null ? "Confirming…" : "Confirm order"}
+          </Button>
+        )}
+        {isAdmin && reschedulable && (
+          <Button variant="secondary" onClick={() => { setMode(mode === "reschedule" ? null : "reschedule"); setError(null); }}>
+            Reschedule
+          </Button>
+        )}
+        {isAdmin && awaiting && (
+          <Button variant="secondary" onClick={() => { setMode(mode === "reject" ? null : "reject"); setError(null); }}>
+            Reject
+          </Button>
+        )}
+        {isAdmin && (
+          <Button variant="danger" onClick={() => { setMode(mode === "cancel" ? null : "cancel"); setError(null); }}>
+            Cancel order
+          </Button>
+        )}
+      </div>
+
+      {mode === "override" && (
+        <div className="flex flex-col gap-2 rounded-lg border border-danger/30 p-4">
+          <p className="text-sm">{error?.message}</p>
+          <Field label="Override reason (recorded in the timeline)" htmlFor="override-reason">
+            <Input id="override-reason" value={override} onChange={(e) => setOverride(e.target.value)} maxLength={300} />
+          </Field>
+          <div className="flex gap-2">
+            <Button variant="danger" disabled={pending || override.trim().length < 5}
+              onClick={() => run(() => confirmOrderAction({ orderId, version, overrideReason: override }))}>
+              Confirm with override
+            </Button>
+            <Button variant="secondary" onClick={() => { setMode(null); setError(null); }}>Close</Button>
+          </div>
+        </div>
+      )}
+
+      {(mode === "reject" || mode === "cancel") && (
+        <div className="flex flex-col gap-2 rounded-lg border border-line p-4">
+          <Field
+            label={mode === "reject" ? "Reason for rejecting" : "Reason for cancelling"}
+            htmlFor="close-reason"
+            hint={mode === "cancel" ? "Payments are not refunded automatically; record any refund separately." : "The customer should be told this reason."}
+          >
+            <Input id="close-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} autoFocus />
+          </Field>
+          <div className="flex gap-2">
+            <Button variant="danger" disabled={pending || reason.trim().length < 3}
+              onClick={() => run(() => (mode === "reject" ? rejectOrderAction : cancelOrderAction)({ orderId, version, reason }))}>
+              {pending ? "Saving…" : mode === "reject" ? "Reject order" : "Cancel order"}
+            </Button>
+            <Button variant="secondary" onClick={() => setMode(null)}>Keep order</Button>
+          </div>
+        </div>
+      )}
+
+      {mode === "reschedule" && (
+        <div className="flex flex-col gap-3 rounded-lg border border-line p-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="New pickup time" htmlFor="new-due">
+              <Input id="new-due" type="datetime-local" value={newDue} onChange={(e) => setNewDue(e.target.value)} />
+            </Field>
+            <Field label="Reason" htmlFor="resched-reason">
+              <Input id="resched-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="e.g. Customer asked for evening" />
+            </Field>
+          </div>
+          {overrideWanted && (
+            <Field label="Override reason (admin)" htmlFor="resched-override">
+              <Input id="resched-override" value={override} onChange={(e) => setOverride(e.target.value)} maxLength={300} />
+            </Field>
+          )}
+          <div className="flex gap-2">
+            <Button disabled={pending || reason.trim().length < 3}
+              onClick={() => run(() => rescheduleOrderAction({ orderId, version, dueLocal: newDue, reason, overrideReason: overrideWanted ? override : undefined }))}>
+              {pending ? "Saving…" : overrideWanted ? "Save with override" : "Save new time"}
+            </Button>
+            <Button variant="secondary" onClick={() => { setMode(null); setError(null); }}>Close</Button>
+          </div>
+        </div>
+      )}
+
+      {error && mode !== "override" && <ErrorBox error={error} onReload={() => { setError(null); router.refresh(); }} />}
+    </div>
+  );
+}
+
+export function PaymentForm({
+  orderId,
+  balancePaise,
+  refundablePaise,
+  isAdmin,
+  acceptsPayments,
+}: {
+  orderId: string;
+  balancePaise: number;
+  refundablePaise: number;
+  isAdmin: boolean;
+  acceptsPayments: boolean;
+}) {
+  const router = useRouter();
+  const [kind, setKind] = useState<"payment" | "refund">(acceptsPayments && balancePaise > 0 ? "payment" : "refund");
+  const [key, setKey] = useState(() => crypto.randomUUID());
+  const [method, setMethod] = useState<PaymentMethod>("cash");
+  const [amount, setAmount] = useState(paiseToRupeesInput(Math.max(0, kind === "payment" ? balancePaise : refundablePaise)));
+  const [reference, setReference] = useState("");
+  const [note, setNote] = useState("");
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pending, start] = useTransition();
+
+  const canPay = acceptsPayments && balancePaise > 0;
+  const canRefund = isAdmin && refundablePaise > 0;
+  if (!canPay && !canRefund) return null;
+
+  function switchKind(next: "payment" | "refund") {
+    setKind(next);
+    setAmount(paiseToRupeesInput(next === "payment" ? balancePaise : refundablePaise));
+    setMessage(null);
+  }
+
+  return (
+    <form
+      className="flex flex-col gap-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setMessage(null);
+        start(async () => {
+          const result = await recordPaymentAction({ orderId, idempotencyKey: key, kind, method, amount, reference, note });
+          if (result.ok) {
+            setMessage({ ok: true, text: kind === "payment" ? "Payment recorded." : "Refund recorded." });
+            setKey(crypto.randomUUID());
+            setReference("");
+            setNote("");
+            router.refresh();
+          } else {
+            setMessage({ ok: false, text: result.message ?? "Could not record it." });
+          }
+        });
+      }}
+    >
+      {canPay && canRefund && (
+        <div className="flex gap-4" role="radiogroup" aria-label="Type">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="radio" className="accent-brand" checked={kind === "payment"} onChange={() => switchKind("payment")} /> Payment
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="radio" className="accent-brand" checked={kind === "refund"} onChange={() => switchKind("refund")} /> Refund
+          </label>
+        </div>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Amount (₹)" htmlFor="pay-amount">
+          <Input id="pay-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+        </Field>
+        <Field label="Method" htmlFor="pay-method">
+          <Select id="pay-method" value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
+            {(Object.keys(paymentMethodLabel) as PaymentMethod[]).map((m) => (
+              <option key={m} value={m}>{paymentMethodLabel[m]}</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Reference (optional)" htmlFor="pay-ref" hint="UPI or card transaction ID.">
+          <Input id="pay-ref" value={reference} onChange={(e) => setReference(e.target.value)} maxLength={100} />
+        </Field>
+        <Field label={kind === "refund" ? "Reason (required)" : "Note (optional)"} htmlFor="pay-note">
+          <Input id="pay-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} required={kind === "refund"} />
+        </Field>
+      </div>
+      <div className="flex items-center gap-3">
+        <Button type="submit" variant={kind === "refund" ? "danger" : "primary"} disabled={pending}>
+          {pending ? "Saving…" : kind === "payment" ? "Record payment" : "Record refund"}
+        </Button>
+        {message && <p aria-live="polite" className={message.ok ? "text-sm text-ok" : "text-sm text-danger"}>{message.text}</p>}
+      </div>
+    </form>
+  );
+}

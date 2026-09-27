@@ -1,0 +1,20 @@
+# Dependencies and build output
+node_modules/
+.next/
+out/
+
+# Secrets and local credentials (never commit)
+.env
+.env.*
+!.env.example
+.admin-password.txt
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local tooling
+.claude/
+*.tmp.mjs
