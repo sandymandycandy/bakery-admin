@@ -97,7 +97,140 @@ do $$ begin
   exception when others then insert into r(check_name,outcome) values ('E2 counter cannot set caps', sqlerrm); end;
 end $$;
 
--- ORDER CHECKS (added in Task 2) GO HERE
+-- ===== Counter: orders against windows and caps =====
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000004c1","role":"authenticated"}', true);
+do $$
+declare o public.orders; o2 public.orders; h text;
+begin
+  o := public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('puff', 1),
+        p_customer_name => 'Cap Test', p_customer_phone => '9000000401', p_due_at => pg_temp.ts(200, '09:30'));
+  o2 := public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('puff', 1),
+        p_customer_name => 'Cap Test', p_customer_phone => '9000000401', p_due_at => pg_temp.ts(200, '10:00'));
+  insert into ctx values ('o1', o.id::text), ('o2', o2.id::text);
+  -- expect: pending_confirmation pending_confirmation
+  insert into r(check_name,outcome) values ('C1 two orders fill window 9-11', o.status || ' ' || o2.status);
+
+  begin perform public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('puff', 1),
+        p_customer_name => 'Cap Test', p_customer_phone => '9000000401', p_due_at => pg_temp.ts(200, '10:30'));
+    insert into r(check_name,outcome) values ('C2 full window refused', 'ALLOWED');
+  -- expect: capacity: Pickup window 9:00 AM–11:00 AM is full (2/2). An admin can override with a reason.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('C2 full window refused', h || ': ' || sqlerrm); end;
+
+  begin perform public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('puff', 1),
+        p_customer_name => 'Cap Test', p_customer_phone => '9000000401', p_due_at => pg_temp.ts(200, '10:30'),
+        p_override_reason => 'Counter wants it');
+    insert into r(check_name,outcome) values ('C3 counter cannot override', 'ALLOWED');
+  -- expect: forbidden: Only an admin can override scheduling rules.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('C3 counter cannot override', h || ': ' || sqlerrm); end;
+
+  o := public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('puff', 1),
+        p_customer_name => 'Cap Test', p_customer_phone => '9000000401', p_due_at => pg_temp.ts(200, '11:00'));
+  -- expect: pending_confirmation (11:00 belongs to the unlimited 11-13 window)
+  insert into r(check_name,outcome) values ('C4 boundary time goes to the later window', o.status::text);
+
+  o := public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('puff', 1),
+        p_customer_name => 'Cap Test', p_customer_phone => '9000000401', p_due_at => pg_temp.ts(200, '13:00'));
+  -- expect: pending_confirmation
+  insert into r(check_name,outcome) values ('C5 end of last window accepted', o.status::text);
+
+  begin perform public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('puff', 1),
+        p_customer_name => 'Cap Test', p_customer_phone => '9000000401', p_due_at => pg_temp.ts(200, '14:00'));
+    insert into r(check_name,outcome) values ('C6 time outside every window refused', 'ALLOWED');
+  -- expect: slot: 2:00 PM is outside the pickup windows for <Weekday DD Mon>. An admin can override with a reason.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('C6 time outside every window refused', h || ': ' || sqlerrm); end;
+
+  o := public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('cake', 3),
+        p_customer_name => 'Cap Test', p_customer_phone => '9000000401', p_due_at => pg_temp.ts(200, '11:30'));
+  -- expect: pending_confirmation cat=true (3 cakes use one of one place; category snapshot stored)
+  insert into r(check_name,outcome) values ('C7 cap counts orders, not units',
+    o.status || ' cat=' || ((select category_id from public.order_items where order_id = o.id) = (select v::uuid from ctx where k = 'cakes_cat'))::text);
+
+  begin perform public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('cake', 1),
+        p_customer_name => 'Cap Test', p_customer_phone => '9000000401', p_due_at => pg_temp.ts(200, '12:00'));
+    insert into r(check_name,outcome) values ('C8 capped category refused', 'ALLOWED');
+  -- expect: capacity: T Cap Cakes: 1/1 orders on <DD Mon>. An admin can override with a reason.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('C8 capped category refused', h || ': ' || sqlerrm); end;
+
+  o := public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('puff', 2), p_confirm => true);
+  -- expect: confirmed (today's weekday has one window with 0 places)
+  insert into r(check_name,outcome) values ('C9 walk-in immediate order skips capacity', o.status::text);
+
+  o := public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('puff', 1),
+        p_customer_name => 'Cap Test', p_customer_phone => '9000000401', p_due_at => pg_temp.ts(201, '14:00'));
+  -- expect: pending_confirmation
+  insert into r(check_name,outcome) values ('C10 weekday without windows is unrestricted', o.status::text);
+end $$;
+
+-- ===== Admin: overrides, reschedule, confirm, festival days, availability =====
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000004a1","role":"authenticated"}', true);
+do $$
+declare o public.orders; h text; o1 uuid := (select v::uuid from ctx where k = 'o1'); day date := (select v::date from ctx where k = 'day');
+begin
+  o := public.reject_order((select v::uuid from ctx where k = 'o2'), 1, 'Test rejection');
+  o := public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('puff', 1),
+        p_customer_name => 'Cap Test', p_customer_phone => '9000000401', p_due_at => pg_temp.ts(200, '10:45'));
+  insert into ctx values ('o3', o.id::text);
+  -- expect: pending_confirmation (the rejected order no longer counts)
+  insert into r(check_name,outcome) values ('D1 rejected orders free their place', o.status::text);
+
+  o := public.reschedule_order(o1, (select version from public.orders where id = o1), pg_temp.ts(200, '10:30'), 'Customer asked');
+  -- expect: true (window is 2/2 but the order itself is not counted)
+  insert into r(check_name,outcome) values ('D4 reschedule within its own full window', (o.due_at = pg_temp.ts(200, '10:30'))::text);
+
+  o := public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('puff', 1),
+        p_customer_name => 'Cap Test', p_customer_phone => '9000000401', p_due_at => pg_temp.ts(200, '10:15'),
+        p_override_reason => 'Owner approved extra festival order');
+  -- expect: Pickup window 9:00 AM–11:00 AM is full (2/2).
+  insert into r(check_name,outcome) values ('D2 admin override records capacity detail',
+    (select data ->> 'capacity' from public.order_events where order_id = o.id and event_type = 'override'));
+
+  begin perform public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('puff', 1),
+        p_customer_name => 'Cap Test', p_customer_phone => '9000000401', p_due_at => pg_temp.ts(200, '10:20'),
+        p_override_reason => 'ok');
+    insert into r(check_name,outcome) values ('D3 short override reason refused', 'ALLOWED');
+  -- expect: validation: Give an override reason of at least 5 characters.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('D3 short override reason refused', h || ': ' || sqlerrm); end;
+
+  begin perform public.confirm_order((select v::uuid from ctx where k = 'o3'), 1);
+    insert into r(check_name,outcome) values ('D5 confirm re-checks an over-full window', 'ALLOWED');
+  -- expect: capacity: Pickup window 9:00 AM–11:00 AM is full (2/2). An admin can override with a reason.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('D5 confirm re-checks an over-full window', h || ': ' || sqlerrm); end;
+
+  perform public.set_date_windows(day, 'Diwali', '[{"starts_at":"15:00","ends_at":"17:00","max_orders":5}]');
+  o := public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('puff', 1),
+        p_customer_name => 'Cap Test', p_customer_phone => '9000000401', p_due_at => pg_temp.ts(200, '16:00'));
+  -- expect: pending_confirmation
+  insert into r(check_name,outcome) values ('D6a festival windows replace the weekday list', o.status::text);
+  begin perform public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('puff', 1),
+        p_customer_name => 'Cap Test', p_customer_phone => '9000000401', p_due_at => pg_temp.ts(200, '10:05'));
+    insert into r(check_name,outcome) values ('D6b weekday window unavailable on festival day', 'ALLOWED');
+  -- expect: slot: 10:05 AM is outside the pickup windows for <Weekday DD Mon>. …
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('D6b weekday window unavailable on festival day', h || ': ' || sqlerrm); end;
+
+  insert into public.capacity_overrides (on_date, kind, category_id, max_orders, note)
+    values (day, 'category', (select v::uuid from ctx where k = 'puffs_cat'), 0, 'No puffs on Diwali');
+  begin perform public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('puff', 1),
+        p_customer_name => 'Cap Test', p_customer_phone => '9000000401', p_due_at => pg_temp.ts(200, '16:30'));
+    insert into r(check_name,outcome) values ('D7 category date override of 0 blocks the category', 'ALLOWED');
+  -- expect: capacity: T Cap Puffs: <n>/0 orders on <DD Mon>. …
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('D7 category date override of 0 blocks the category', h || ': ' || sqlerrm); end;
+
+  -- expect: {"windows": [{"max": 5, "used": 1, "ends_at": "17:00", "starts_at": "15:00"}], "categories": [cakes used 1 max 1, puffs max 0 …]}
+  insert into r(check_name,outcome) values ('D8 availability for the festival day', public.pickup_availability(day)::text);
+
+  -- expect: true
+  insert into r(check_name,outcome) values ('D9 capacity check holds the per-day advisory lock',
+    exists (select 1 from pg_locks where locktype = 'advisory' and pid = pg_backend_pid() and objsubid = 2
+            and objid = (day - date '2000-01-01')::oid)::text);
+end $$;
 
 reset role;
 select check_name, outcome from r order by n;
