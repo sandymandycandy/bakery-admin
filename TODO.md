@@ -7,7 +7,7 @@ Checkboxes represent actual completion, not intentions.
 
 1. [ ] Read [HANDOVER.md](HANDOVER.md), then PRD sections 5F, 7, 10A, and 14A.
 2. [ ] Get access to the Supabase project `auri-bakery` (ask the owner to invite you) and add `SUPABASE_SECRET_KEY` to `web/.env.local`.
-3. [ ] Put the code under version control (`git init`, first commit) and push to a private repository.
+3. [x] Code is on GitHub: `sandymandycandy/bakery-admin` (branch `main`). Clone it; get `web/.env.local` values from the owner.
 4. [ ] Run the app locally and click through every admin screen in a browser (never done yet — only HTTP-level tests so far).
 5. [ ] Create a staging Supabase project so tests can create bills without consuming the live bill sequence.
 6. [ ] Enable Leaked Password Protection (Supabase → Auth → Password security).

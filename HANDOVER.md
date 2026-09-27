@@ -26,7 +26,7 @@ The database currently holds **no products, orders, or bills**. The only staff a
 | Secret key | **Not configured.** Copy it from Supabase → Project Settings → API Keys into `web/.env.local` as `SUPABASE_SECRET_KEY`. Without it, Staff & Kitchens is read-only (no creating logins or resetting passwords). Never commit it. |
 | Publishable key and URL | Already in `web/.env.local` (safe for browsers). `web/.env.example` documents all variables. |
 | Hosting | Nothing deployed. Vercel is the plan (PRD 10A). |
-| Version control | **None yet.** The folder is not a git repository. Initialise it and push to a private repository before making changes. |
+| Version control | GitHub: `sandymandycandy/bakery-admin`, branch `main`. Secrets (`web/.env.local`, `web/.admin-password.txt`) are git-ignored and must be shared separately. |
 
 ## 3. Running it
 
@@ -127,7 +127,7 @@ Business decisions still needed are listed in PRD section 14 and TODO Phase 0. T
 
 ## 7. Known gaps and risks
 
-- No version control, staging environment, or deployment yet.
+- No staging environment or deployment yet.
 - No browser click-through; print layouts have not been checked with a real bill on a real 80mm printer.
 - Placeholder pages: KOT, Reports, Kitchen.
 - Not built yet: chef PIN sign-in on tablets (AC-34); editing items on a pending order (currently cancel and recreate); customer blocking UI; ready-stock stock counts (blocked on PRD decision 7).
@@ -136,7 +136,7 @@ Business decisions still needed are listed in PRD section 14 and TODO Phase 0. T
 
 ## 8. Suggested order of work
 
-1. Git, secret key, a browser walkthrough of every screen, and fixing anything found.
+1. Clone the repo, add the secret key, walk through every screen in a browser, and fix anything found.
 2. Staging project; rerun all SQL and e2e tests there.
 3. Phase 4C (TODO lists the items).
 4. Phase 5 KOT and chef workflow: ticket tables with kitchen-scoped RLS, scheduled release via `pg_cron`, Supabase Realtime for the chef screen, packing and handover (which should mark orders completed and auto-issue bills).
