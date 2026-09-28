@@ -256,6 +256,92 @@ export type Database = {
           },
         ]
       }
+      capacity_overrides: {
+        Row: {
+          category_id: string | null
+          created_at: string
+          created_by: string | null
+          ends_at: string | null
+          id: string
+          kind: string
+          max_orders: number | null
+          note: string
+          on_date: string
+          starts_at: string | null
+        }
+        Insert: {
+          category_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          ends_at?: string | null
+          id?: string
+          kind: string
+          max_orders?: number | null
+          note: string
+          on_date: string
+          starts_at?: string | null
+        }
+        Update: {
+          category_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          ends_at?: string | null
+          id?: string
+          kind?: string
+          max_orders?: number | null
+          note?: string
+          on_date?: string
+          starts_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capacity_overrides_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      category_daily_caps: {
+        Row: {
+          category_id: string
+          max_orders: number
+          updated_at: string
+        }
+        Insert: {
+          category_id: string
+          max_orders: number
+          updated_at?: string
+        }
+        Update: {
+          category_id?: string
+          max_orders?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "category_daily_caps_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: true
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pickup_windows: {
+        Row: {
+          created_at: string
+          ends_at: string
+          id: string
+          max_orders: number | null
+          starts_at: string
+          weekday: number
+        }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
       credit_notes: {
         Row: CreditNoteRow
         Insert: never
@@ -399,6 +485,7 @@ export type Database = {
         Row: {
           allergens: string[]
           cancelled_quantity: number
+          category_id: string | null
           contains_egg: boolean
           created_at: string
           discount_paise: number
@@ -425,6 +512,13 @@ export type Database = {
         Insert: never
         Update: never
         Relationships: [
+          {
+            foreignKeyName: "order_items_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "order_items_kitchen_id_fkey"
             columns: ["kitchen_id"]
@@ -744,6 +838,18 @@ export type Database = {
           p_override_reason?: string
           p_source: Database["public"]["Enums"]["order_source"]
         }
+      }
+      pickup_availability: {
+        Args: { p_date: string }
+        Returns: Json
+      }
+      set_date_windows: {
+        Args: { p_date: string; p_note: string; p_windows: Json }
+        Returns: undefined
+      }
+      set_pickup_windows: {
+        Args: { p_weekdays: number[]; p_windows: Json }
+        Returns: undefined
       }
       record_payment: {
         Args: {

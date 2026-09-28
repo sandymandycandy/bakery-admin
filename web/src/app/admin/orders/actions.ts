@@ -8,6 +8,7 @@ import { getBusinessTimezone } from "@/lib/settings";
 import { zonedLocalToDate } from "@/lib/time";
 import { parseRupeesToPaise } from "@/lib/money";
 import { rpcError, type RpcFailure } from "@/lib/orders";
+import type { PickupAvailability } from "@/lib/capacity";
 
 type Result<T = object> = ({ ok: true } & T) | ({ ok?: false } & RpcFailure);
 
@@ -152,6 +153,16 @@ export async function rescheduleOrderAction(
   if (error) return rpcError(error);
   await afterChange(parsed.data.orderId);
   return { ok: true };
+}
+
+// Window and category usage for one business-local day ("YYYY-MM-DD"). Null when it cannot be loaded.
+export async function pickupAvailabilityAction(dayKey: string): Promise<PickupAvailability | null> {
+  await assertRole(["admin", "counter"]);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) return null;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("pickup_availability", { p_date: dayKey });
+  if (error) return null;
+  return data as unknown as PickupAvailability;
 }
 
 const paymentSchema = z.object({
