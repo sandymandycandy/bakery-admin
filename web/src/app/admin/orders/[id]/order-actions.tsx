@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Button, Field, Input, Select } from "@/components/ui";
-import { OVERRIDABLE_KINDS, paymentMethodLabel, type OrderStatus, type PaymentMethod } from "@/lib/orders";
+import { paymentMethodLabel, type OrderStatus, type PaymentMethod } from "@/lib/orders";
+import { OverridePrompt } from "@/components/override-prompt";
 import { paiseToRupeesInput } from "@/lib/money";
 import {
   cancelOrderAction,
@@ -28,7 +29,8 @@ function ErrorBox({ error, onReload }: { error: Failure; onReload: () => void })
   );
 }
 
-type Mode = null | "reject" | "cancel" | "reschedule" | "override";
+type Mode = null | "reject" | "cancel" | "reschedule";
+type Attempt = (overrideReason?: string) => Promise<{ ok?: boolean; message?: string; kind?: string }>;
 
 export function OrderActions({
   orderId,
@@ -48,76 +50,55 @@ export function OrderActions({
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(null);
   const [reason, setReason] = useState("");
-  const [override, setOverride] = useState("");
   const [newDue, setNewDue] = useState(dueLocal);
-  const [error, setError] = useState<Failure | null>(null);
+  const [failed, setFailed] = useState<{ error: Failure; retry: Attempt } | null>(null);
   const [pending, start] = useTransition();
 
   const awaiting = status === "draft" || status === "pending_confirmation";
   const open = !["completed", "rejected", "cancelled"].includes(status);
   const reschedulable = awaiting || status === "confirmed";
 
-  function run(action: () => Promise<{ ok?: boolean; message?: string; kind?: string }>) {
-    setError(null);
+  // Runs an action; on refusal keeps it so an admin can retry it with an override reason.
+  function run(attempt: Attempt, overrideReason?: string) {
+    setFailed(null);
     start(async () => {
-      const result = await action();
+      const result = await attempt(overrideReason);
       if (result.ok) {
         setMode(null);
         setReason("");
-        setOverride("");
         router.refresh();
       } else {
-        const failure = { message: result.message ?? "Something went wrong.", kind: result.kind };
-        setError(failure);
-        if (isAdmin && failure.kind && OVERRIDABLE_KINDS.has(failure.kind) && mode !== "reschedule") setMode("override");
+        setFailed({ error: { message: result.message ?? "Something went wrong.", kind: result.kind }, retry: attempt });
       }
     });
   }
 
   if (!open) return null;
 
-  const overrideWanted = isAdmin && error?.kind && OVERRIDABLE_KINDS.has(error.kind);
-
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-2">
         {awaiting && canConfirm && (
-          <Button disabled={pending} onClick={() => run(() => confirmOrderAction({ orderId, version }))}>
+          <Button disabled={pending} onClick={() => run((o) => confirmOrderAction({ orderId, version, overrideReason: o }))}>
             {pending && mode === null ? "Confirming…" : "Confirm order"}
           </Button>
         )}
         {isAdmin && reschedulable && (
-          <Button variant="secondary" onClick={() => { setMode(mode === "reschedule" ? null : "reschedule"); setError(null); }}>
+          <Button variant="secondary" onClick={() => { setMode(mode === "reschedule" ? null : "reschedule"); setFailed(null); }}>
             Reschedule
           </Button>
         )}
         {isAdmin && awaiting && (
-          <Button variant="secondary" onClick={() => { setMode(mode === "reject" ? null : "reject"); setError(null); }}>
+          <Button variant="secondary" onClick={() => { setMode(mode === "reject" ? null : "reject"); setFailed(null); }}>
             Reject
           </Button>
         )}
         {isAdmin && (
-          <Button variant="danger" onClick={() => { setMode(mode === "cancel" ? null : "cancel"); setError(null); }}>
+          <Button variant="danger" onClick={() => { setMode(mode === "cancel" ? null : "cancel"); setFailed(null); }}>
             Cancel order
           </Button>
         )}
       </div>
-
-      {mode === "override" && (
-        <div className="flex flex-col gap-2 rounded-lg border border-danger/30 p-4">
-          <p className="text-sm">{error?.message}</p>
-          <Field label="Override reason (recorded in the timeline)" htmlFor="override-reason">
-            <Input id="override-reason" value={override} onChange={(e) => setOverride(e.target.value)} maxLength={300} />
-          </Field>
-          <div className="flex gap-2">
-            <Button variant="danger" disabled={pending || override.trim().length < 5}
-              onClick={() => run(() => confirmOrderAction({ orderId, version, overrideReason: override }))}>
-              Confirm with override
-            </Button>
-            <Button variant="secondary" onClick={() => { setMode(null); setError(null); }}>Close</Button>
-          </div>
-        </div>
-      )}
 
       {(mode === "reject" || mode === "cancel") && (
         <div className="flex flex-col gap-2 rounded-lg border border-line p-4">
@@ -148,22 +129,27 @@ export function OrderActions({
               <Input id="resched-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="e.g. Customer asked for evening" />
             </Field>
           </div>
-          {overrideWanted && (
-            <Field label="Override reason (admin)" htmlFor="resched-override">
-              <Input id="resched-override" value={override} onChange={(e) => setOverride(e.target.value)} maxLength={300} />
-            </Field>
-          )}
           <div className="flex gap-2">
             <Button disabled={pending || reason.trim().length < 3}
-              onClick={() => run(() => rescheduleOrderAction({ orderId, version, dueLocal: newDue, reason, overrideReason: overrideWanted ? override : undefined }))}>
-              {pending ? "Saving…" : overrideWanted ? "Save with override" : "Save new time"}
+              onClick={() => run((o) => rescheduleOrderAction({ orderId, version, dueLocal: newDue, reason, overrideReason: o }))}>
+              {pending ? "Saving…" : "Save new time"}
             </Button>
-            <Button variant="secondary" onClick={() => { setMode(null); setError(null); }}>Close</Button>
+            <Button variant="secondary" onClick={() => { setMode(null); setFailed(null); }}>Close</Button>
           </div>
         </div>
       )}
 
-      {error && mode !== "override" && <ErrorBox error={error} onReload={() => { setError(null); router.refresh(); }} />}
+      {failed && (failed.error.kind === "conflict" ? (
+        <ErrorBox error={failed.error} onReload={() => { setFailed(null); router.refresh(); }} />
+      ) : (
+        <OverridePrompt
+          key={failed.error.message}
+          error={failed.error}
+          isAdmin={isAdmin}
+          pending={pending}
+          onOverride={(reason) => run(failed.retry, reason)}
+        />
+      ))}
     </div>
   );
 }

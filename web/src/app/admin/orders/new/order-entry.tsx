@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Alert, Badge, Button, Card, Checkbox, Field, Input, Textarea, VegMark, cx } from "@/components/ui";
 import { SourceBadge } from "@/components/order-badges";
 import { formatLeadTime, formatPaise } from "@/lib/money";
-import { OVERRIDABLE_KINDS } from "@/lib/orders";
+import { OverridePrompt } from "@/components/override-prompt";
 import { createOrderAction } from "../actions";
 
 export type CatalogueProduct = {
@@ -46,7 +46,6 @@ export function OrderEntry({
   const [customerNotes, setCustomerNotes] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
   const [confirm, setConfirm] = useState(canConfirm && source === "IN_STORE");
-  const [overrideReason, setOverrideReason] = useState("");
   const [error, setError] = useState<{ message: string; kind?: string } | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -85,7 +84,7 @@ export function OrderEntry({
     setLines((current) => current.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   }
 
-  function submit(withOverride: boolean) {
+  function submit(overrideReason?: string) {
     setError(null);
     startTransition(async () => {
       const result = await createOrderAction({
@@ -98,7 +97,7 @@ export function OrderEntry({
         customerNotes,
         internalNotes,
         confirm,
-        overrideReason: withOverride ? overrideReason : undefined,
+        overrideReason,
       });
       if (result.ok) {
         router.push(`/admin/orders/${result.orderId}?created=1`);
@@ -107,8 +106,6 @@ export function OrderEntry({
       }
     });
   }
-
-  const canOverride = isAdmin && error?.kind && OVERRIDABLE_KINDS.has(error.kind);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
@@ -263,25 +260,21 @@ export function OrderEntry({
         )}
 
         {error && (
-          <Alert tone="danger" title="Order not saved">
-            <p>{error.message}</p>
-            {canOverride && (
-              <div className="mt-3 flex flex-col gap-2 text-ink">
-                <label htmlFor="override" className="text-sm font-medium">Override reason (admin)</label>
-                <Input id="override" value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} placeholder="e.g. Owner approved an early pickup" maxLength={300} />
-                <Button type="button" variant="danger" disabled={pending || overrideReason.trim().length < 5} onClick={() => submit(true)}>
-                  Save with override
-                </Button>
-              </div>
-            )}
-          </Alert>
+          <OverridePrompt
+            key={error.message}
+            title="Order not saved"
+            error={error}
+            isAdmin={isAdmin}
+            pending={pending}
+            onOverride={(reason) => submit(reason)}
+          />
         )}
 
         <Button
           type="button"
           className={cx("py-3 text-base")}
           disabled={pending || lines.length === 0}
-          onClick={() => submit(false)}
+          onClick={() => submit()}
         >
           {pending ? "Saving…" : confirm ? `Create and confirm · ${formatPaise(total)}` : `Create order · ${formatPaise(total)}`}
         </Button>
