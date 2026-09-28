@@ -290,10 +290,12 @@ These requirements are included in the plan. Decide whether they ship in the fir
 - Sales use bill/payment dates, not due dates, consistent with the Home-screen rule. Export to CSV.
 - This is a simple operational report. Advanced analytics and accounting integrations remain deferred.
 
-#### Daily order caps and cut-offs
+#### Daily order caps and pickup windows
 
-- Configure per-day and per-slot limits by product category (for example, maximum custom cakes per day). Also configure same-day and next-day ordering cut-off times.
-- Admins can raise or lower caps for festival days (Christmas, New Year, Diwali, and similar) and mark closed days in advance.
+- Pickup windows are defined per weekday (for example 9–11, 11–1), each with an optional order limit. A day with no windows accepts any time within opening hours.
+- Daily caps per product category count **orders** that contain the category (for example, at most 8 orders with custom cakes per day).
+- Cut-offs are not used: product lead times cover them (owner decision, 2026-09-27).
+- Admins can replace a date's windows or change a category's cap for festival days (Christmas, New Year, Diwali, and similar), and mark closed days in advance.
 - The website stops offering a full slot or day. Staff entering call/in-store orders see a warning and may override with a reason.
 
 #### Kitchen tablet sign-in
@@ -529,7 +531,7 @@ Release 1 gates: AC-01 to AC-20, AC-22 (basic packing and one-time handover), an
 20. OTP provider and cost, or captcha-plus-callback; submission limits; deposit threshold.
 21. Veg/non-veg and eggless status plus allergens for every product; which products have eggless variants.
 22. Discount permissions and limits per role.
-23. Daily/slot caps per category, ordering cut-offs, and the festival calendar.
+23. Daily/slot caps per category, ordering cut-offs, and the festival calendar. **Decided 2026-09-27:** per-weekday windows with limits, per-category daily caps counting orders, festival date overrides, no cut-offs, admin-only override. Actual numbers still to be entered in Settings.
 24. Kitchen tablets (count, model) and whether PIN sign-in is acceptable to the owner.
 25. Confirm the recommended stack and hosting budget (section 10A).
 

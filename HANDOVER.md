@@ -10,7 +10,7 @@ Date: 2026-09-27. Read this first, then [TODO.md](TODO.md) ("Start here"), [PRD.
 | 3 Foundation | **Done** | Staff login, roles, kitchens, products/variants/categories, settings, audit log. Chef PIN sign-in **not built**. |
 | 4A Orders | **Done** | In-store and call orders, two order lists, order detail, confirm/reject/cancel/reschedule, payments and refunds, calendar (agenda and month), opening hours and closures, customers. |
 | 4B Billing | **Done** | Counter quick sale, discounts, GST bills (gap-free per financial year), credit notes, 80mm and A4 print. |
-| 4C | **Next** | Daily caps and cut-offs, week/day calendar, override dialog, notification templates. See TODO "Phase 4C". |
+| 4C | **In progress** | Done: pickup windows, category caps, festival overrides, shared override prompt (not yet clicked through in a browser). Left: week/day calendar, notification templates, customer blocking screens, editing pending items. See TODO "Phase 4C". |
 | 5 KOT / chef | Not started | Kitchen tickets, chef queue, packing, handover. The `/kitchen` page is a placeholder. |
 | 6 Public website | Not started | Deferred by the owner ("leave the public page for now"). |
 | 7–9 | Not started | Reports, rehearsal, launch, Release 1.1 exceptions. |
@@ -73,7 +73,7 @@ auri bakery/
   - takes the order **version**, so concurrent edits fail with a "conflict" instead of overwriting;
   - writes an `order_events` timeline row.
 - The functions are `SECURITY DEFINER` in `public`. The Supabase advisor warns about this; it is intentional (they are the only write path and each checks the role). Helpers live in the unexposed `private` schema.
-- Errors use `private.fail(message, kind)`. The message is written for staff; `kind` travels in the Postgres `hint` field (`slot`, `lead_time`, `conflict`, `forbidden`, `unmapped`, `billed`, …). `web/src/lib/orders.ts → rpcError` maps them to UI behaviour; for example `slot` and `lead_time` offer admins an override with a reason.
+- Errors use `private.fail(message, kind)`. The message is written for staff; `kind` travels in the Postgres `hint` field (`slot`, `lead_time`, `capacity`, `conflict`, `forbidden`, `unmapped`, `billed`, …). `web/src/lib/orders.ts → rpcError` maps them to UI behaviour; `slot`, `lead_time`, `blocked` and `capacity` show the shared `OverridePrompt`, where admins retry with a reason (at least 5 characters, also checked in the database).
 - Every table has an audit trigger (`audit_events`: who, what, before, after).
 
 ### Invariants — do not break
@@ -89,10 +89,10 @@ auri bakery/
 
 Files in `supabase/migrations/` were applied to the live project in order through the Supabase MCP server. The CLI is not linked. To continue:
 
-- Install the Supabase CLI and run `supabase link --project-ref hljkydruionasnouyrpu`. Check that the remote migration history matches the files (names: `foundation`, `orders`, `billing`, `bill_gst_split_per_rate`, `bill_gst_split_integer_division`, `counter_sale_precheck`).
+- Install the Supabase CLI and run `supabase link --project-ref hljkydruionasnouyrpu`. Check that the remote migration history matches the files (names: `foundation`, `orders`, `billing`, `bill_gst_split_per_rate`, `bill_gst_split_integer_division`, `counter_sale_precheck`, `capacity`, `capacity_enforcement`).
   - The last GST-split fix was applied as `bill_gst_split_integer_division`, but its file is `20260927000310_bill_gst_split_per_rate.sql` (the file already contains the fixed version). Reconcile the history names when linking.
 - New tables in `public` get full API access by default in Supabase. Every migration so far **revokes** that and grants only what is needed; keep doing this, and enable RLS on every table.
-- After schema changes, regenerate `web/src/lib/database.types.ts` (`supabase gen types typescript`). The current file was condensed by hand from generated output (order tables are marked `Insert: never`). Replacing it with fully generated types is fine.
+- After schema changes, regenerate `web/src/lib/database.types.ts` (`supabase gen types typescript`). The current file was condensed by hand from generated output (order tables are marked `Insert: never`); the Phase 4C tables and functions were added by hand in the same shape. Replacing it with fully generated types is fine.
 - Run the security and performance advisors after each migration.
 
 ## 5. Tests
@@ -101,14 +101,15 @@ Files in `supabase/migrations/` were applied to the live project in order throug
 |---|---|---|
 | `supabase/tests/rls_foundation.sql` | Paste into the Supabase SQL editor | 13/13 |
 | `supabase/tests/orders_logic.sql` | SQL editor | 22/22 |
-| `supabase/tests/billing_logic.sql` | SQL editor | all pass (includes the per-rate CGST/SGST check) |
+| `supabase/tests/billing_logic.sql` | SQL editor | all pass (includes the per-rate CGST/SGST check); rerun 2026-09-28 after 4C: unchanged |
+| `supabase/tests/capacity_logic.sql` | SQL editor | 27/27 (2026-09-28): windows, boundaries, caps, festival overrides, override reasons, availability, per-day lock |
 | `web/scripts/e2e/orders-4a.mjs` | Build, run `npm start -- -p 3100`, create QA users (`supabase/tests/qa_users.sql`), then `QA_PW=... npm run e2e:orders` | 29/29 |
 | `web/scripts/e2e/billing-4b.mjs` | Same setup, `npm run e2e:billing` | 17/19. The 2 failures were test-script issues (assertions depend on leftover data); the app behaviour was confirmed correct. Fix the assertions before relying on it. |
 
 Caveats:
 - SQL tests roll back, but they **consume order numbers** (`order_number_seq` is not transactional). Reset it with `alter sequence public.order_number_seq restart with 1001` **only while no real orders exist**.
 - The e2e scripts **commit data**. Run them against staging. Never run successful counter sales or bill issuing on the live project after launch: bills are permanent and consume real numbers.
-- **Nobody has clicked through the UI in a browser yet.** All checks so far are SQL- and HTTP-level. Do a full manual pass first; consider adding Playwright.
+- **Nobody has clicked through the UI in a browser yet** (including the 4C Settings → Capacity section and the pickup-window panel). All checks so far are SQL- and HTTP-level. Do a full manual pass first; consider adding Playwright.
 - Timezone helpers were checked with a small script (9/9); there is no unit-test framework in the repo yet.
 
 ## 6. Defaults chosen (owner has not confirmed)

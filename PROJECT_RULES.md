@@ -128,3 +128,6 @@ Status: Draft working rules for the planning baseline, 2026-09-27.
 | 2026-09-27 | Orders, payments, bills written only through role-checked database functions with idempotency keys and version checks | Implements rules 2.11, 5.1, 5.4, 5.7 |
 | 2026-09-27 | Tests must not create bills on the live project; staging needed | Bills are permanent and consume the legal sequence |
 | 2026-09-27 | Project handed over to another developer | User request; see HANDOVER.md |
+| 2026-09-27 | Capacity: daily caps per category plus an order limit per pickup window; windows defined per weekday; festival date overrides | Owner answers in Phase 4C design |
+| 2026-09-27 | Category caps count orders, not units; cut-offs dropped (lead times cover them) | Owner answers in Phase 4C design |
+| 2026-09-27 | Only admins override full windows/caps, with a reason of at least 5 characters | Owner answer; matches existing scheduling overrides |

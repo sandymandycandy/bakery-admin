@@ -79,3 +79,10 @@ PRD 5F "Daily order caps and cut-offs" (cut-offs dropped; windows per weekday), 
 ## 8. Out of scope
 
 Public website use of availability (Phase 6); notification templates; calendar week/day views; customer blocking screens; editing items on pending orders; per-weekday category caps.
+
+## 9. Deviations during implementation (2026-09-28)
+
+- The migration is split into `20260927000400_capacity.sql` (schema) and `20260927000410_capacity_enforcement.sql` (checks).
+- Weekday and date window lists are saved through the admin-only RPCs `set_pickup_windows` and `set_date_windows`, so each save is atomic.
+- Non-admins see the database message, which already says "An admin can override with a reason"; no extra line is added.
+- `database.types.ts` was extended by hand rather than fully regenerated.

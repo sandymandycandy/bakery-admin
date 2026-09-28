@@ -1,6 +1,6 @@
 # Bakery Project — To-do List
 
-Status (2026-09-27, handover): Phases 3, 4A and 4B are built and tested. **Next: Phase 4C**, then Phase 5 (KOT). See [HANDOVER.md](HANDOVER.md) for setup, architecture, and known gaps.
+Status (2026-09-28): Phases 3, 4A and 4B are built and tested. Phase 4C capacity caps and the shared override prompt are built and SQL-tested (browser pass still pending). **Next: rest of Phase 4C**, then Phase 5 (KOT). See [HANDOVER.md](HANDOVER.md) for setup, architecture, and known gaps.
 Checkboxes represent actual completion, not intentions.
 
 ## Start here — next developer
@@ -99,7 +99,7 @@ Start only after the user requests coding. Depends on: Phase 2.
 - [ ] Implement trusted kitchen devices and chef PIN switching (AC-34).
 - [x] Configure two placeholder kitchens and business settings (name, contact, GSTIN, FSSAI).
 - [x] Add opening hours and closures (Settings; enforced on every pickup time, 4A).
-- [ ] Add capacity caps, cut-offs, and pickup slots (4C).
+- [x] Add capacity caps and pickup windows (4C, 2026-09-28). Cut-offs dropped by owner decision.
 - [x] Implement categories, products, variants (including eggless), veg/egg/allergen marks, GST rate/HSN, availability, lead times, and kitchen mapping.
 - [x] Implement audit foundations (row-level audit trigger on catalogue, staff, kitchens, settings). Order snapshots come with orders.
 - [x] Verify unauthorized access is denied and unmapped made-to-order variants are listed (SQL RLS checks plus 26 HTTP-level checks, 2026-09-27).
@@ -120,9 +120,9 @@ Depends on: Phase 3.
 - [x] Implement manual order discounts (amount or %) with reason, attribution, and a counter-staff limit (4B).
 - [x] Implement GST bills (gap-free per financial year, per-rate CGST/SGST), credit notes, and 80mm/A4 print (AC-29, 4B).
 - [x] Implement due-date calendar (agenda + month) with source/kitchen/status filters (4A). Week/day views remain for 4C.
-- [ ] Implement slot/day caps, cut-offs, and staff overrides with reason (AC-32).
+- [x] Implement window/day caps and admin overrides with reason (AC-32, staff side; `supabase/tests/capacity_logic.sql`). The website side uses `pickup_availability` in Phase 6.
 - [x] Implement rescheduling, opening-hours/closure/lead-time validation, conflict detection, and cancellation history (4A).
-- [ ] Implement the admin-override action with mandatory reason and audit entry (AC-36).
+- [x] Implement the admin-override action with mandatory reason (at least 5 characters) and timeline entry (AC-36, shared `OverridePrompt`). Kitchen acknowledgement of released-work changes comes with Phase 5.
 - [ ] Implement notification templates, sent-records, and the pending-order alert (AC-31).
 - [x] Verify AC-01, AC-07, AC-11, AC-17, AC-18, AC-19 (22 SQL checks in `supabase/tests/orders_logic.sql`, 29 end-to-end checks, 2026-09-27).
 - [x] Verify AC-28 and AC-29 (billing SQL checks in `supabase/tests/billing_logic.sql`; HTTP checks of all rejection paths, 2026-09-27). Success paths were not run over HTTP to avoid consuming real bill numbers.
@@ -131,9 +131,9 @@ Depends on: Phase 3.
 
 ### Phase 4C — next up
 
-- [ ] Daily and per-slot order caps by category, same-day/next-day cut-offs, festival overrides; website stops offering full slots, staff override with reason (PRD 5F "Daily order caps", AC-32).
+- [x] Pickup windows per weekday with limits, daily caps per category (counting orders), festival date overrides, admin override with reason (AC-32). Cut-offs dropped. **Browser click-through of Settings → Capacity and the new-order/reschedule panels still to do.**
 - [ ] Calendar week and day views (agenda and month exist).
-- [ ] Admin override dialog as a reusable action with mandatory reason and audit entry (AC-36). Overrides already exist inside create/confirm/reschedule; generalise them.
+- [x] Admin override prompt as a shared component with mandatory reason and timeline entry (AC-36).
 - [ ] Notification templates: WhatsApp click-to-chat links for accepted/rejected/rescheduled/ready/cancelled, `notification_records` table, pending-order alert after N minutes (PRD 5F, AC-31).
 - [ ] Customer blocking and no-show recording screens (columns exist on `customers`; enforcement exists in `create_order`).
 - [ ] Editing items on a pending order (currently: cancel and recreate).
