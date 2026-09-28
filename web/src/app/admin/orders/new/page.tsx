@@ -18,7 +18,7 @@ export default async function NewOrderPage({ searchParams }: PageProps<"/admin/o
   const supabase = await createClient();
   const { data: products } = await supabase
     .from("products")
-    .select("id, name, is_veg, contains_egg, prep_type, categories(name, sort_order), product_variants(id, name, price_paise, is_eggless, lead_time_minutes, kitchen_id, is_available, archived_at, sort_order)")
+    .select("id, name, category_id, is_veg, contains_egg, prep_type, categories(name, sort_order), product_variants(id, name, price_paise, is_eggless, lead_time_minutes, kitchen_id, is_available, archived_at, sort_order)")
     .is("archived_at", null)
     .eq("is_available", true)
     .order("name");
@@ -34,6 +34,7 @@ export default async function NewOrderPage({ searchParams }: PageProps<"/admin/o
       id: p.id,
       name: p.name,
       category: p.categories?.name ?? "",
+      categoryId: p.category_id,
       isVeg: p.is_veg,
       containsEgg: p.contains_egg,
       prepType: p.prep_type,

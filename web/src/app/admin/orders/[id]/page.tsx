@@ -196,6 +196,7 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
                 isAdmin={isAdmin}
                 canConfirm={isAdmin || order.source === "IN_STORE"}
                 dueLocal={order.due_at ? dateToZonedLocal(new Date(order.due_at), tz) : ""}
+                categoryIds={[...new Set((items ?? []).map((i) => i.category_id).filter((id): id is string => Boolean(id)))]}
               />
             </div>
           </Card>
@@ -269,6 +270,12 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
                     {typeof data.amount_paise === "number" && <p className="text-xs">{formatPaise(data.amount_paise)}</p>}
                     {typeof data.bill_number === "string" && <p className="font-mono text-xs">{data.bill_number}</p>}
                     {typeof data.credit_note_number === "string" && <p className="font-mono text-xs">{data.credit_note_number}</p>}
+                    {(["slot", "lead_time", "capacity"] as const).map((k) =>
+                      typeof data[k] === "string" ? <p key={k} className="text-xs">Overrode: {data[k] as string}</p> : null,
+                    )}
+                    {e.event_type === "rescheduled" && typeof data.override === "string" && (
+                      <p className="text-xs">Override reason: {data.override}</p>
+                    )}
                     {e.reason && <p className="text-xs">Reason: {e.reason}</p>}
                   </li>
                 );

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Alert, Button, Field, Input, Select } from "@/components/ui";
 import { paymentMethodLabel, type OrderStatus, type PaymentMethod } from "@/lib/orders";
 import { OverridePrompt } from "@/components/override-prompt";
+import { PickupWindows } from "@/components/pickup-windows";
 import { paiseToRupeesInput } from "@/lib/money";
 import {
   cancelOrderAction,
@@ -39,6 +40,7 @@ export function OrderActions({
   isAdmin,
   canConfirm,
   dueLocal,
+  categoryIds,
 }: {
   orderId: string;
   version: number;
@@ -46,6 +48,7 @@ export function OrderActions({
   isAdmin: boolean;
   canConfirm: boolean;
   dueLocal: string;
+  categoryIds: string[];
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(null);
@@ -129,6 +132,12 @@ export function OrderActions({
               <Input id="resched-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="e.g. Customer asked for evening" />
             </Field>
           </div>
+          <PickupWindows
+            dayKey={newDue.slice(0, 10)}
+            time={newDue.slice(11, 16)}
+            categoryIds={categoryIds}
+            onPick={(t) => setNewDue(`${newDue.slice(0, 10)}T${t}`)}
+          />
           <div className="flex gap-2">
             <Button disabled={pending || reason.trim().length < 3}
               onClick={() => run((o) => rescheduleOrderAction({ orderId, version, dueLocal: newDue, reason, overrideReason: o }))}>

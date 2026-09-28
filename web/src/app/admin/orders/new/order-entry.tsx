@@ -6,12 +6,14 @@ import { Alert, Badge, Button, Card, Checkbox, Field, Input, Textarea, VegMark, 
 import { SourceBadge } from "@/components/order-badges";
 import { formatLeadTime, formatPaise } from "@/lib/money";
 import { OverridePrompt } from "@/components/override-prompt";
+import { PickupWindows } from "@/components/pickup-windows";
 import { createOrderAction } from "../actions";
 
 export type CatalogueProduct = {
   id: string;
   name: string;
   category: string;
+  categoryId: string;
   isVeg: boolean;
   containsEgg: boolean;
   prepType: "made_to_order" | "ready_stock";
@@ -69,6 +71,7 @@ export function OrderEntry({
     const e = variantIndex.get(l.variantId);
     return e && e.product.prepType === "made_to_order" && !e.variant.hasKitchen;
   });
+  const categoryIds = [...new Set(lines.map((l) => variantIndex.get(l.variantId)?.product.categoryId).filter((id): id is string => Boolean(id)))];
   const needsCustomer = source === "CALL" || !pickupNow;
 
   function addVariant(productId: string, variantId: string) {
@@ -223,9 +226,17 @@ export function OrderEntry({
             </div>
           )}
           {!pickupNow && (
-            <Field label="Pickup date and time" htmlFor="due" hint={maxLead > 0 ? `These items need ${formatLeadTime(maxLead)} of preparation.` : "Bakery timezone."}>
-              <Input id="due" type="datetime-local" value={dueLocal} min={minDueLocal} onChange={(e) => setDueLocal(e.target.value)} required />
-            </Field>
+            <>
+              <Field label="Pickup date and time" htmlFor="due" hint={maxLead > 0 ? `These items need ${formatLeadTime(maxLead)} of preparation.` : "Bakery timezone."}>
+                <Input id="due" type="datetime-local" value={dueLocal} min={minDueLocal} onChange={(e) => setDueLocal(e.target.value)} required />
+              </Field>
+              <PickupWindows
+                dayKey={dueLocal.slice(0, 10)}
+                time={dueLocal.slice(11, 16)}
+                categoryIds={categoryIds}
+                onPick={(t) => setDueLocal(`${dueLocal.slice(0, 10)}T${t}`)}
+              />
+            </>
           )}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label={needsCustomer ? "Customer name" : "Customer name (optional)"} htmlFor="cname">
