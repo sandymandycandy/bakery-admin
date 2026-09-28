@@ -84,6 +84,7 @@ export function OrderEntry({
   }
 
   function updateLine(key: string, patch: Partial<Line>) {
+    setError(null);
     setLines((current) => current.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   }
 
@@ -193,7 +194,7 @@ export function OrderEntry({
                         }} />
                       <Button type="button" variant="secondary" className="px-2.5 py-1" aria-label={`Increase ${entry.product.name}`}
                         onClick={() => updateLine(l.key, { quantity: Math.min(999, l.quantity + 1) })}>+</Button>
-                      <Button type="button" variant="ghost" className="ml-auto" onClick={() => setLines((c) => c.filter((x) => x.key !== l.key))}>
+                      <Button type="button" variant="ghost" className="ml-auto" onClick={() => { setError(null); setLines((c) => c.filter((x) => x.key !== l.key)); }}>
                         Remove
                       </Button>
                     </div>
@@ -216,11 +217,11 @@ export function OrderEntry({
           {source === "IN_STORE" && (
             <div className="flex gap-4" role="radiogroup" aria-label="Pickup time">
               <label className="flex items-center gap-2 text-sm">
-                <input type="radio" name="pickup" className="accent-brand" checked={pickupNow} onChange={() => setPickupNow(true)} />
+                <input type="radio" name="pickup" className="accent-brand" checked={pickupNow} onChange={() => { setError(null); setPickupNow(true); }} />
                 Now (walk-in)
               </label>
               <label className="flex items-center gap-2 text-sm">
-                <input type="radio" name="pickup" className="accent-brand" checked={!pickupNow} onChange={() => setPickupNow(false)} />
+                <input type="radio" name="pickup" className="accent-brand" checked={!pickupNow} onChange={() => { setError(null); setPickupNow(false); }} />
                 Later
               </label>
             </div>
@@ -228,13 +229,13 @@ export function OrderEntry({
           {!pickupNow && (
             <>
               <Field label="Pickup date and time" htmlFor="due" hint={maxLead > 0 ? `These items need ${formatLeadTime(maxLead)} of preparation.` : "Bakery timezone."}>
-                <Input id="due" type="datetime-local" value={dueLocal} min={minDueLocal} onChange={(e) => setDueLocal(e.target.value)} required />
+                <Input id="due" type="datetime-local" value={dueLocal} min={minDueLocal} onChange={(e) => { setError(null); setDueLocal(e.target.value); }} required />
               </Field>
               <PickupWindows
                 dayKey={dueLocal.slice(0, 10)}
                 time={dueLocal.slice(11, 16)}
                 categoryIds={categoryIds}
-                onPick={(t) => setDueLocal(`${dueLocal.slice(0, 10)}T${t}`)}
+                onPick={(t) => { setError(null); setDueLocal(`${dueLocal.slice(0, 10)}T${t}`); }}
               />
             </>
           )}
@@ -243,7 +244,7 @@ export function OrderEntry({
               <Input id="cname" value={customerName} onChange={(e) => setCustomerName(e.target.value)} maxLength={80} autoComplete="off" />
             </Field>
             <Field label={needsCustomer ? "Phone" : "Phone (optional)"} htmlFor="cphone">
-              <Input id="cphone" type="tel" inputMode="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} autoComplete="off" />
+              <Input id="cphone" type="tel" inputMode="tel" value={customerPhone} onChange={(e) => { setError(null); setCustomerPhone(e.target.value); }} autoComplete="off" />
             </Field>
           </div>
           <Field label="Customer notes" htmlFor="cnotes">

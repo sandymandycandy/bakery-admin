@@ -180,11 +180,15 @@ begin
   o := public.reschedule_order(o1, (select version from public.orders where id = o1), pg_temp.ts(200, '10:30'), 'Customer asked');
   -- expect: true (window is 2/2 but the order itself is not counted)
   insert into r(check_name,outcome) values ('D4 reschedule within its own full window', (o.due_at = pg_temp.ts(200, '10:30'))::text);
+  -- expect: 1 (window 9-11 holds o1 and o3; the order being rescheduled is left out)
+  insert into r(check_name,outcome) values ('D4b availability can leave out the order being rescheduled',
+    (select w ->> 'used' from jsonb_array_elements(public.pickup_availability(day, o1) -> 'windows') w where w ->> 'starts_at' = '09:00'));
 
   o := public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('puff', 1),
         p_customer_name => 'Cap Test', p_customer_phone => '9000000401', p_due_at => pg_temp.ts(200, '10:15'),
         p_override_reason => 'Owner approved extra festival order');
   -- expect: Pickup window 9:00 AM–11:00 AM is full (2/2).
+  insert into ctx values ('o4', o.id::text);
   insert into r(check_name,outcome) values ('D2 admin override records capacity detail',
     (select data ->> 'capacity' from public.order_events where order_id = o.id and event_type = 'override'));
 
@@ -196,11 +200,17 @@ begin
   exception when others then get stacked diagnostics h = pg_exception_hint;
     insert into r(check_name,outcome) values ('D3 short override reason refused', h || ': ' || sqlerrm); end;
 
-  begin perform public.confirm_order((select v::uuid from ctx where k = 'o3'), 1);
-    insert into r(check_name,outcome) values ('D5 confirm re-checks an over-full window', 'ALLOWED');
-  -- expect: capacity: Pickup window 9:00 AM–11:00 AM is full (2/2). An admin can override with a reason.
+  -- Window 9-11 now holds o1, o3 (booked normally) and o4 (admin override): 3/2.
+  -- expect: confirmed (only orders booked before o3 count, so a later override does not block it)
+  begin o := public.confirm_order((select v::uuid from ctx where k = 'o3'), 1);
+    insert into r(check_name,outcome) values ('D5a earlier booking confirms despite a later override', o.status::text);
   exception when others then get stacked diagnostics h = pg_exception_hint;
-    insert into r(check_name,outcome) values ('D5 confirm re-checks an over-full window', h || ': ' || sqlerrm); end;
+    insert into r(check_name,outcome) values ('D5a earlier booking confirms despite a later override', h || ': ' || sqlerrm); end;
+  -- expect: capacity: Pickup window 9:00 AM–11:00 AM is full (2/2). An admin can override with a reason.
+  begin perform public.confirm_order((select v::uuid from ctx where k = 'o4'), 1);
+    insert into r(check_name,outcome) values ('D5b the over-limit booking needs an override to confirm', 'ALLOWED');
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('D5b the over-limit booking needs an override to confirm', h || ': ' || sqlerrm); end;
 
   perform public.set_date_windows(day, 'Diwali', '[{"starts_at":"15:00","ends_at":"17:00","max_orders":5}]');
   o := public.create_order(gen_random_uuid(), 'IN_STORE', pg_temp.items('puff', 1),

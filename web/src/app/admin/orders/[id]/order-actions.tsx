@@ -110,7 +110,7 @@ export function OrderActions({
             htmlFor="close-reason"
             hint={mode === "cancel" ? "Payments are not refunded automatically; record any refund separately." : "The customer should be told this reason."}
           >
-            <Input id="close-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} autoFocus />
+            <Input id="close-reason" value={reason} onChange={(e) => { setFailed(null); setReason(e.target.value); }} maxLength={300} autoFocus />
           </Field>
           <div className="flex gap-2">
             <Button variant="danger" disabled={pending || reason.trim().length < 3}
@@ -126,17 +126,18 @@ export function OrderActions({
         <div className="flex flex-col gap-3 rounded-lg border border-line p-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="New pickup time" htmlFor="new-due">
-              <Input id="new-due" type="datetime-local" value={newDue} onChange={(e) => setNewDue(e.target.value)} />
+              <Input id="new-due" type="datetime-local" value={newDue} onChange={(e) => { setFailed(null); setNewDue(e.target.value); }} />
             </Field>
             <Field label="Reason" htmlFor="resched-reason">
-              <Input id="resched-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="e.g. Customer asked for evening" />
+              <Input id="resched-reason" value={reason} onChange={(e) => { setFailed(null); setReason(e.target.value); }} maxLength={300} placeholder="e.g. Customer asked for evening" />
             </Field>
           </div>
           <PickupWindows
             dayKey={newDue.slice(0, 10)}
             time={newDue.slice(11, 16)}
             categoryIds={categoryIds}
-            onPick={(t) => setNewDue(`${newDue.slice(0, 10)}T${t}`)}
+            excludeOrderId={orderId}
+            onPick={(t) => { setFailed(null); setNewDue(`${newDue.slice(0, 10)}T${t}`); }}
           />
           <div className="flex gap-2">
             <Button disabled={pending || reason.trim().length < 3}

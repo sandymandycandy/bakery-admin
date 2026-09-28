@@ -840,7 +840,7 @@ export type Database = {
         }
       }
       pickup_availability: {
-        Args: { p_date: string }
+        Args: { p_date: string; p_exclude_order?: string }
         Returns: Json
       }
       set_date_windows: {

@@ -13,11 +13,14 @@ export function PickupWindows({
   dayKey,
   time,
   categoryIds,
+  excludeOrderId,
   onPick,
 }: {
   dayKey: string;
   time: string;
   categoryIds: string[];
+  // The order being rescheduled, left out of the counts (it does not compete with itself).
+  excludeOrderId?: string;
   onPick: (time: string) => void;
 }) {
   const [loaded, setLoaded] = useState<{ dayKey: string; data: PickupAvailability | null } | null>(null);
@@ -26,13 +29,13 @@ export function PickupWindows({
   useEffect(() => {
     if (!validDay) return;
     let live = true;
-    pickupAvailabilityAction(dayKey).then((data) => {
+    pickupAvailabilityAction(dayKey, excludeOrderId).then((data) => {
       if (live) setLoaded({ dayKey, data });
     });
     return () => {
       live = false;
     };
-  }, [dayKey, validDay]);
+  }, [dayKey, validDay, excludeOrderId]);
 
   if (!validDay) return null;
   if (!loaded || loaded.dayKey !== dayKey) return <p className="text-sm text-muted">Checking availability…</p>;

@@ -89,7 +89,7 @@ auri bakery/
 
 Files in `supabase/migrations/` were applied to the live project in order through the Supabase MCP server. The CLI is not linked. To continue:
 
-- Install the Supabase CLI and run `supabase link --project-ref hljkydruionasnouyrpu`. Check that the remote migration history matches the files (names: `foundation`, `orders`, `billing`, `bill_gst_split_per_rate`, `bill_gst_split_integer_division`, `counter_sale_precheck`, `capacity`, `capacity_enforcement`).
+- Install the Supabase CLI and run `supabase link --project-ref hljkydruionasnouyrpu`. Check that the remote migration history matches the files (names: `foundation`, `orders`, `billing`, `bill_gst_split_per_rate`, `bill_gst_split_integer_division`, `counter_sale_precheck`, `capacity`, `capacity_enforcement`, `capacity_review_fixes`).
   - The last GST-split fix was applied as `bill_gst_split_integer_division`, but its file is `20260927000310_bill_gst_split_per_rate.sql` (the file already contains the fixed version). Reconcile the history names when linking.
 - New tables in `public` get full API access by default in Supabase. Every migration so far **revokes** that and grants only what is needed; keep doing this, and enable RLS on every table.
 - After schema changes, regenerate `web/src/lib/database.types.ts` (`supabase gen types typescript`). The current file was condensed by hand from generated output (order tables are marked `Insert: never`); the Phase 4C tables and functions were added by hand in the same shape. Replacing it with fully generated types is fine.
@@ -102,7 +102,7 @@ Files in `supabase/migrations/` were applied to the live project in order throug
 | `supabase/tests/rls_foundation.sql` | Paste into the Supabase SQL editor | 13/13 |
 | `supabase/tests/orders_logic.sql` | SQL editor | 22/22 |
 | `supabase/tests/billing_logic.sql` | SQL editor | all pass (includes the per-rate CGST/SGST check); rerun 2026-09-28 after 4C: unchanged |
-| `supabase/tests/capacity_logic.sql` | SQL editor | 27/27 (2026-09-28): windows, boundaries, caps, festival overrides, override reasons, availability, per-day lock |
+| `supabase/tests/capacity_logic.sql` | SQL editor | 29/29 (2026-09-28): windows, boundaries, caps, festival overrides, override reasons, confirm ranking, availability, per-day lock |
 | `web/scripts/e2e/orders-4a.mjs` | Build, run `npm start -- -p 3100`, create QA users (`supabase/tests/qa_users.sql`), then `QA_PW=... npm run e2e:orders` | 29/29 |
 | `web/scripts/e2e/billing-4b.mjs` | Same setup, `npm run e2e:billing` | 17/19. The 2 failures were test-script issues (assertions depend on leftover data); the app behaviour was confirmed correct. Fix the assertions before relying on it. |
 

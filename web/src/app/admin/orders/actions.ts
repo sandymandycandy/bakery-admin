@@ -156,11 +156,12 @@ export async function rescheduleOrderAction(
 }
 
 // Window and category usage for one business-local day ("YYYY-MM-DD"). Null when it cannot be loaded.
-export async function pickupAvailabilityAction(dayKey: string): Promise<PickupAvailability | null> {
+export async function pickupAvailabilityAction(dayKey: string, excludeOrderId?: string): Promise<PickupAvailability | null> {
   await assertRole(["admin", "counter"]);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) return null;
+  if (excludeOrderId !== undefined && !z.uuid().safeParse(excludeOrderId).success) return null;
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("pickup_availability", { p_date: dayKey });
+  const { data, error } = await supabase.rpc("pickup_availability", { p_date: dayKey, p_exclude_order: excludeOrderId });
   if (error) return null;
   return data as unknown as PickupAvailability;
 }
