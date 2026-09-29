@@ -43,3 +43,5 @@ next-env.d.ts
 
 # local admin credentials
 .admin-password.txt
+
+.vercel
