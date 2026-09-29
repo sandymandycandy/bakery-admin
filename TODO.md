@@ -132,7 +132,7 @@ Depends on: Phase 3.
 ### Phase 4C — next up
 
 - [x] Pickup windows per weekday with limits, daily caps per category (counting orders), festival date overrides, admin override with reason (AC-32). Cut-offs dropped. **Browser click-through of Settings → Capacity and the new-order/reschedule panels still to do.**
-- [ ] Calendar week and day views (agenda and month exist).
+- [x] Calendar week and day views (day view grouped by pickup window with window and category usage). **Browser click-through still to do** (no orders in the database yet).
 - [x] Admin override prompt as a shared component with mandatory reason and timeline entry (AC-36).
 - [ ] Notification templates: WhatsApp click-to-chat links for accepted/rejected/rescheduled/ready/cancelled, `notification_records` table, pending-order alert after N minutes (PRD 5F, AC-31).
 - [ ] Customer blocking and no-show recording screens (columns exist on `customers`; enforcement exists in `create_order`).
