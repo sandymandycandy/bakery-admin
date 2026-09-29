@@ -1,9 +1,19 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getStaff, homePathFor } from "@/lib/auth";
-import { LoginForm } from "./login-form";
+import { LoginForm, type DemoLogin } from "./login-form";
 
 export const metadata: Metadata = { title: "Staff sign in" };
+
+// Demo logins are pre-filled only while their DEMO_* variables are set (owner's choice: including production).
+// Unset the variables to turn this off.
+function demoLogins(): DemoLogin[] {
+  const accounts = [
+    { label: "Demo admin", email: process.env.DEMO_ADMIN_EMAIL, password: process.env.DEMO_ADMIN_PASSWORD },
+    { label: "Demo chef", email: process.env.DEMO_CHEF_EMAIL, password: process.env.DEMO_CHEF_PASSWORD },
+  ];
+  return accounts.filter((a): a is DemoLogin => Boolean(a.email && a.password));
+}
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const staff = await getStaff();
@@ -20,7 +30,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           <p className="mt-1 text-sm text-muted">Admins, counter staff, and chefs.</p>
         </div>
         <div className="rounded-xl border border-line bg-surface p-6 shadow-sm">
-          <LoginForm next={typeof next === "string" ? next : undefined} />
+          <LoginForm next={typeof next === "string" ? next : undefined} demoLogins={demoLogins()} />
         </div>
         <p className="mt-6 text-center text-xs text-muted">
           Forgot your password? Ask an admin to reset it.
