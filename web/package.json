@@ -9,6 +9,7 @@
     "lint": "eslint",
     "create-admin": "node --env-file=.env.local scripts/create-admin.mjs",
     "typecheck": "next typegen && tsc --noEmit",
+    "test": "node --test \"src/**/*.test.ts\"",
     "e2e:orders": "node --env-file=.env.local scripts/e2e/orders-4a.mjs",
     "e2e:billing": "node --env-file=.env.local scripts/e2e/billing-4b.mjs"
   },

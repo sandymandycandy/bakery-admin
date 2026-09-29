@@ -4,9 +4,14 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getBusinessTimezone } from "@/lib/settings";
 import { OPEN_STATUSES, type OrderStatus } from "@/lib/orders";
-import { addDays, formatDayHeading, formatTime, zonedDayKey, zonedDayRange } from "@/lib/time";
-import { EmptyState, PageHeader, Select, cx } from "@/components/ui";
-import { SourceBadge, StatusBadge } from "@/components/order-badges";
+import type { PickupAvailability } from "@/lib/capacity";
+import { addDays, formatDayHeading, zonedDayKey, zonedDayRange } from "@/lib/time";
+import { PageHeader, Select, cx } from "@/components/ui";
+import type { OrdersByDay } from "./order-row";
+import { AgendaView } from "./agenda-view";
+import { DayView } from "./day-view";
+import { MonthView } from "./month-view";
+import { WeekView } from "./week-view";
 
 export const metadata: Metadata = { title: "Calendar" };
 
@@ -16,30 +21,46 @@ function str(v: string | string[] | undefined) {
 
 const isDayKey = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
 
+const VIEWS = ["agenda", "day", "week", "month"] as const;
+type View = (typeof VIEWS)[number];
+const VIEW_LABEL: Record<View, string> = { agenda: "Agenda", day: "Day", week: "Week", month: "Month" };
+const AGENDA_DAYS = 14;
+
+// Monday on or before a day ("YYYY-MM-DD").
+const mondayOf = (day: string) => addDays(day, -((new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7));
+const shortDate = (day: string, withYear = false) =>
+  new Intl.DateTimeFormat("en-IN", { timeZone: "UTC", day: "numeric", month: "short", ...(withYear ? { year: "numeric" } : {}) }).format(
+    new Date(`${day}T00:00:00Z`),
+  );
+
 export default async function CalendarPage({ searchParams }: PageProps<"/admin/calendar">) {
   await requireRole(["admin", "counter"]);
   const params = await searchParams;
   const tz = await getBusinessTimezone();
   const today = zonedDayKey(new Date(), tz);
 
-  const view = str(params.view) === "month" ? "month" : "agenda";
+  const view: View = (VIEWS as readonly string[]).includes(str(params.view)) ? (str(params.view) as View) : "agenda";
   const from = isDayKey(str(params.from)) ? str(params.from) : today;
   const source = ["IN_STORE", "CALL", "ONLINE"].includes(str(params.source)) ? (str(params.source) as "IN_STORE" | "CALL" | "ONLINE") : "";
   const kitchen = str(params.kitchen);
   const showClosed = str(params.closed) === "1";
 
-  // Month view covers whole weeks (Mon–Sun) around the chosen month.
+  // Month view covers whole weeks (Mon–Sun) around the chosen month; week view is Mon–Sun.
   const monthStart = `${from.slice(0, 7)}-01`;
-  const monthStartDow = (new Date(`${monthStart}T00:00:00Z`).getUTCDay() + 6) % 7;
-  const gridStart = addDays(monthStart, -monthStartDow);
-  const rangeStart = view === "month" ? gridStart : from;
-  const rangeDays = view === "month" ? 42 : 14;
+  const gridStart = mondayOf(monthStart);
+  const weekStart = mondayOf(from);
+  const [rangeStart, rangeDays]: [string, number] = {
+    agenda: [from, AGENDA_DAYS] as [string, number],
+    day: [from, 1] as [string, number],
+    week: [weekStart, 7] as [string, number],
+    month: [gridStart, 42] as [string, number],
+  }[view];
   const { start, end } = zonedDayRange(rangeStart, tz, rangeDays);
 
   const supabase = await createClient();
   let query = supabase
     .from("order_summaries")
-    .select("id, reference, source, status, customer_name, due_at, item_count, kitchen_ids, confirmed_due_at")
+    .select("id, reference, source, status, customer_name, due_at, item_count, kitchen_ids")
     .gte("due_at", start.toISOString())
     .lt("due_at", end.toISOString())
     .order("due_at");
@@ -47,15 +68,18 @@ export default async function CalendarPage({ searchParams }: PageProps<"/admin/c
   if (source) query = query.eq("source", source);
   if (kitchen) query = query.contains("kitchen_ids", [kitchen]);
 
-  const [{ data: orders }, { data: kitchens }, { data: closures }] = await Promise.all([
+  const [{ data: orders }, { data: kitchens }, { data: closures }, availability] = await Promise.all([
     query,
     supabase.from("kitchens").select("id, name").order("sort_order"),
     supabase.from("closures").select("closed_on, reason").gte("closed_on", rangeStart).lt("closed_on", addDays(rangeStart, rangeDays)),
+    view === "day"
+      ? supabase.rpc("pickup_availability", { p_date: from }).then(({ data, error }) => (error ? null : (data as unknown as PickupAvailability)))
+      : null,
   ]);
   const kitchenName = new Map((kitchens ?? []).map((k) => [k.id, k.name]));
   const closureByDay = new Map((closures ?? []).map((c) => [c.closed_on, c.reason]));
 
-  const byDay = new Map<string, NonNullable<typeof orders>>();
+  const byDay: OrdersByDay = new Map();
   for (const o of orders ?? []) {
     if (!o.due_at) continue;
     const key = zonedDayKey(o.due_at, tz);
@@ -66,9 +90,17 @@ export default async function CalendarPage({ searchParams }: PageProps<"/admin/c
     const next = new URLSearchParams({ view, from, ...(source ? { source } : {}), ...(kitchen ? { kitchen } : {}), ...(showClosed ? { closed: "1" } : {}), ...overrides });
     return `/admin/calendar?${next.toString()}`;
   };
-  const prevFrom = view === "month" ? addDays(monthStart, -1).slice(0, 7) + "-01" : addDays(from, -14);
-  const nextFrom = view === "month" ? addDays(monthStart, 32).slice(0, 7) + "-01" : addDays(from, 14);
-  const monthLabel = new Intl.DateTimeFormat("en-IN", { timeZone: "UTC", month: "long", year: "numeric" }).format(new Date(`${monthStart}T00:00:00Z`));
+  const dayHref = (day: string) => link({ view: "day", from: day });
+
+  const step = { agenda: AGENDA_DAYS, day: 1, week: 7, month: 0 }[view];
+  const prevFrom = view === "month" ? addDays(monthStart, -1).slice(0, 7) + "-01" : addDays(from, -step);
+  const nextFrom = view === "month" ? addDays(monthStart, 32).slice(0, 7) + "-01" : addDays(from, step);
+  const rangeLabel = {
+    agenda: `${formatDayHeading(from)} + ${AGENDA_DAYS} days`,
+    day: formatDayHeading(from),
+    week: `${shortDate(weekStart)} – ${shortDate(addDays(weekStart, 6), true)}`,
+    month: new Intl.DateTimeFormat("en-IN", { timeZone: "UTC", month: "long", year: "numeric" }).format(new Date(`${monthStart}T00:00:00Z`)),
+  }[view];
 
   return (
     <>
@@ -79,10 +111,10 @@ export default async function CalendarPage({ searchParams }: PageProps<"/admin/c
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1 rounded-lg border border-line bg-surface p-1">
-          {(["agenda", "month"] as const).map((v) => (
+          {VIEWS.map((v) => (
             <Link key={v} href={link({ view: v })} aria-current={view === v ? "page" : undefined}
               className={cx("rounded-md px-3 py-1.5 text-sm font-medium", view === v ? "bg-brand-soft text-brand-strong" : "text-muted hover:text-ink")}>
-              {v === "agenda" ? "Agenda" : "Month"}
+              {VIEW_LABEL[v]}
             </Link>
           ))}
         </div>
@@ -90,7 +122,7 @@ export default async function CalendarPage({ searchParams }: PageProps<"/admin/c
           <Link href={link({ from: prevFrom })} className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm hover:bg-brand-soft" aria-label="Previous">←</Link>
           <Link href={link({ from: today })} className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm hover:bg-brand-soft">Today</Link>
           <Link href={link({ from: nextFrom })} className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm hover:bg-brand-soft" aria-label="Next">→</Link>
-          <span className="ml-2 text-sm font-medium">{view === "month" ? monthLabel : `${formatDayHeading(from)} + 14 days`}</span>
+          <span className="ml-2 text-sm font-medium">{rangeLabel}</span>
         </div>
       </div>
 
@@ -120,66 +152,18 @@ export default async function CalendarPage({ searchParams }: PageProps<"/admin/c
         <button type="submit" className="rounded-lg border border-line bg-surface px-3.5 py-2 text-sm font-medium hover:bg-brand-soft">Apply</button>
       </form>
 
-      {view === "month" ? (
-        <div className="overflow-x-auto">
-          <div className="grid min-w-[700px] grid-cols-7 gap-px overflow-hidden rounded-xl border border-line bg-line text-sm">
-            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-              <div key={d} className="bg-canvas px-2 py-1.5 text-xs font-medium uppercase tracking-wider text-muted">{d}</div>
-            ))}
-            {Array.from({ length: 42 }, (_, i) => addDays(gridStart, i)).map((day) => {
-              const dayOrders = byDay.get(day) ?? [];
-              const pending = dayOrders.filter((o) => o.status === "pending_confirmation").length;
-              const inMonth = day.startsWith(from.slice(0, 7));
-              return (
-                <Link key={day} href={link({ view: "agenda", from: day })}
-                  className={cx("flex min-h-24 flex-col gap-1 bg-surface p-2 hover:bg-brand-soft/50", !inMonth && "bg-canvas/60 text-muted", day === today && "ring-2 ring-inset ring-brand")}>
-                  <span className="text-xs font-medium">{Number(day.slice(8))}</span>
-                  {closureByDay.has(day) && <span className="text-xs text-danger">Closed</span>}
-                  {dayOrders.length > 0 && <span className="font-semibold">{dayOrders.length} order{dayOrders.length === 1 ? "" : "s"}</span>}
-                  {pending > 0 && <span className="text-xs text-warn">{pending} pending</span>}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-5">
-          {Array.from({ length: 14 }, (_, i) => addDays(from, i)).map((day) => {
-            const dayOrders = byDay.get(day) ?? [];
-            const closure = closureByDay.get(day);
-            if (dayOrders.length === 0 && !closure && day !== today) return null;
-            return (
-              <section key={day} aria-labelledby={`day-${day}`}>
-                <h2 id={`day-${day}`} className="mb-2 flex items-baseline gap-2 text-sm font-semibold">
-                  {formatDayHeading(day)}
-                  {day === today && <span className="text-xs font-medium text-brand">Today</span>}
-                  {closure && <span className="text-xs font-medium text-danger">Closed: {closure}</span>}
-                  <span className="text-xs font-normal text-muted">{dayOrders.length} order{dayOrders.length === 1 ? "" : "s"}</span>
-                </h2>
-                {dayOrders.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-line bg-surface px-4 py-3 text-sm text-muted">Nothing due.</p>
-                ) : (
-                  <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
-                    {dayOrders.map((o) => (
-                      <li key={o.id}>
-                        <Link href={`/admin/orders/${o.id}`} className={cx("flex flex-wrap items-center gap-3 px-4 py-3 hover:bg-canvas/60", o.status === "pending_confirmation" && "bg-warn-soft/40")}>
-                          <span className="w-20 font-semibold tabular-nums">{o.due_at && formatTime(o.due_at, tz)}</span>
-                          <span className="font-mono text-sm">{o.reference}</span>
-                          <span className="min-w-32 flex-1">{o.customer_name ?? "Walk-in"}</span>
-                          <span className="text-sm text-muted">{o.item_count} item{o.item_count === 1 ? "" : "s"}</span>
-                          <span className="text-sm text-muted">{(o.kitchen_ids ?? []).map((k) => kitchenName.get(k)).filter(Boolean).join(" + ") || "No kitchen work"}</span>
-                          {o.source && <SourceBadge source={o.source} />}
-                          {o.status && <StatusBadge status={o.status} />}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-            );
-          })}
-          {(orders ?? []).length === 0 && <EmptyState title="No orders in the next 14 days">Orders appear here by pickup time as soon as they are created.</EmptyState>}
-        </div>
+      {view === "month" && (
+        <MonthView gridStart={gridStart} month={from.slice(0, 7)} today={today} byDay={byDay} closureByDay={closureByDay} dayHref={dayHref} />
+      )}
+      {view === "week" && (
+        <WeekView weekStart={weekStart} today={today} byDay={byDay} closureByDay={closureByDay} tz={tz} dayHref={dayHref} />
+      )}
+      {view === "day" && (
+        <DayView day={from} today={today} orders={byDay.get(from) ?? []} closure={closureByDay.get(from)} availability={availability}
+          filtered={Boolean(source || kitchen || showClosed)} tz={tz} kitchenName={kitchenName} />
+      )}
+      {view === "agenda" && (
+        <AgendaView from={from} days={AGENDA_DAYS} today={today} byDay={byDay} closureByDay={closureByDay} tz={tz} kitchenName={kitchenName} />
       )}
     </>
   );
