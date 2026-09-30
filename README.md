@@ -4,7 +4,7 @@
 
 Planning documents: [PRD.md](PRD.md), [TODO.md](TODO.md), [PROJECT_RULES.md](PROJECT_RULES.md).
 
-Status: Phases 3, 4A, and 4B are built (staff login, catalogue, orders, calendar, payments, counter sale, GST bills). Next is Phase 4C.
+Status (2026-09-30): Phases 3, 4A and 4B are built (staff login, catalogue, orders, calendar, payments, counter sale, GST bills). Phase 4C is in progress: capacity caps, override prompt, and calendar week/day views are done. Production: https://bakery-admin-ten.vercel.app. See [HANDOVER.md](HANDOVER.md).
 
 `la pater/` is the original static prototype, kept as reference.
 

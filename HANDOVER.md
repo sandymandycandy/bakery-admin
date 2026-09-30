@@ -1,6 +1,6 @@
 # Handover — Auri Bakery order management
 
-Date: 2026-09-27. Read this first, then [TODO.md](TODO.md) ("Start here"), [PRD.md](PRD.md), and [PROJECT_RULES.md](PROJECT_RULES.md).
+Date: 2026-09-30 (first written 2026-09-27). Read this first, then [TODO.md](TODO.md) ("Start here"), [PRD.md](PRD.md), and [PROJECT_RULES.md](PROJECT_RULES.md).
 
 ## 1. Where things stand
 
@@ -8,9 +8,9 @@ Date: 2026-09-27. Read this first, then [TODO.md](TODO.md) ("Start here"), [PRD.
 |---|---|---|
 | 0–2 Planning | Mostly done | PRD v0.3, rules, TODO. Many business decisions still open (PRD section 14). |
 | 3 Foundation | **Done** | Staff login, roles, kitchens, products/variants/categories, settings, audit log. Chef PIN sign-in **not built**. |
-| 4A Orders | **Done** | In-store and call orders, two order lists, order detail, confirm/reject/cancel/reschedule, payments and refunds, calendar (agenda and month), opening hours and closures, customers. |
+| 4A Orders | **Done** | In-store and call orders, two order lists, order detail, confirm/reject/cancel/reschedule, payments and refunds, calendar, opening hours and closures, customers. |
 | 4B Billing | **Done** | Counter quick sale, discounts, GST bills (gap-free per financial year), credit notes, 80mm and A4 print. |
-| 4C | **In progress** | Done: pickup windows, category caps, festival overrides, shared override prompt (not yet clicked through in a browser). Left: week/day calendar, notification templates, customer blocking screens, editing pending items. See TODO "Phase 4C". |
+| 4C | **In progress** | Done: pickup windows, category caps, festival overrides, shared override prompt, calendar week and day views (day view grouped by pickup window), demo-login autofill. Left: customer blocking and no-show screens (designed, see section 9), editing pending items, notification templates (blocked on owner decisions). None of 4C has been clicked through in a browser. See TODO "Phase 4C". |
 | 5 KOT / chef | Not started | Kitchen tickets, chef queue, packing, handover. The `/kitchen` page is a placeholder. |
 | 6 Public website | Not started | Deferred by the owner ("leave the public page for now"). |
 | 7–9 | Not started | Reports, rehearsal, launch, Release 1.1 exceptions. |
@@ -23,10 +23,12 @@ The database currently holds **no products, orders, or bills**. The only staff a
 |---|---|
 | Supabase project | `auri-bakery`, ref `hljkydruionasnouyrpu`, region ap-south-1 (Mumbai), in the owner's Supabase organisation. Ask the owner to invite you. |
 | Demo admin login | `demo@auri.test`. The password is in `web/.admin-password.txt` on the owner's machine; it is git-ignored. Get it from the owner privately. `@auri.test` cannot receive emails, so create a real admin before go-live and disable this one. |
+| Demo chef login | **Not created yet.** Needs the secret key, then `npm run create-admin -- --email chef@auri.test --name "Demo Chef" --role chef` (chefs are assigned to every kitchen). |
+| Demo-login autofill | `/login` pre-fills the demo logins while `DEMO_ADMIN_EMAIL`/`DEMO_ADMIN_PASSWORD` (and `DEMO_CHEF_*`) are set, with a switch when both are set. **The owner chose to allow this in production.** Anyone who opens the site is then pre-filled as admin on the live database. **Not set anywhere yet** (neither `web/.env.local` nor Vercel). Delete the variables and redeploy to turn it off; do so before real data goes in. |
 | Secret key | **Not configured.** Copy it from Supabase → Project Settings → API Keys into `web/.env.local` as `SUPABASE_SECRET_KEY`. Without it, Staff & Kitchens is read-only (no creating logins or resetting passwords). Never commit it. |
 | Publishable key and URL | Already in `web/.env.local` (safe for browsers). `web/.env.example` documents all variables. |
-| Hosting | Nothing deployed. Vercel is the plan (PRD 10A). |
-| Version control | GitHub: `sandymandycandy/bakery-admin`, branch `main`. Secrets (`web/.env.local`, `web/.admin-password.txt`) are git-ignored and must be shared separately. |
+| Hosting | Vercel project `bakery-admin` (team "sandymandycandy's projects"), root `web/`, production at **https://bakery-admin-ten.vercel.app** (deployed 2026-09-29 from `main`, matching commit `111f877`; no runtime errors in the first hour). Deployed with `vercel deploy --prod` from `web/`; **Git integration is not connected**, so pushes do not deploy. `web/vercel.json` pins the Next.js preset (without it the site served only 404s). Production env vars: the Supabase URL and publishable key only. |
+| Version control | GitHub: `sandymandycandy/bakery-admin`. `main` holds all work; the `phase-4c-capacity` and `phase-4c-calendar` branches are merged and pushed. Secrets (`web/.env.local`, `web/.admin-password.txt`) are git-ignored and must be shared separately. |
 
 ## 3. Running it
 
@@ -36,11 +38,14 @@ npm install
 npm run dev            # http://localhost:3000 → redirects to /login
 npm run typecheck      # next typegen + tsc
 npm run lint
+npm test               # unit tests (Node's built-in runner, src/**/*.test.ts)
 npm run build
-npm run create-admin -- --email you@example.com --name "Your Name"   # needs SUPABASE_SECRET_KEY
+npm run create-admin -- --email you@example.com --name "Your Name" [--role admin|counter|chef]   # needs SUPABASE_SECRET_KEY
 ```
 
-Node 22 is used. There is no Docker, so there is no local Supabase; the app talks to the hosted project.
+Node 22 is used (22.18+ runs the `.ts` tests directly). There is no Docker, so there is no local Supabase; the app talks to the hosted project.
+
+**If `npm run dev` returns 500 on every page** with a Turbopack panic about `globals.css` (`node process exited … 0xc0000142`), start with `npx next dev --webpack` instead. This happened from a sandboxed agent shell on the owner's machine; it may not affect a normal terminal. Production builds on Vercel are unaffected. There is no Docker, so there is no local Supabase; the app talks to the hosted project.
 
 **Next.js 16 is newer than most training data and tutorials.** `web/AGENTS.md` points to the bundled docs in `web/node_modules/next/dist/docs/`. Notable differences: `middleware.ts` is now `src/proxy.ts`; `params`/`searchParams` are Promises; `PageProps<"/route">` and `LayoutProps` are global types generated by `next typegen`.
 
@@ -103,14 +108,15 @@ Files in `supabase/migrations/` were applied to the live project in order throug
 | `supabase/tests/orders_logic.sql` | SQL editor | 22/22 |
 | `supabase/tests/billing_logic.sql` | SQL editor | all pass (includes the per-rate CGST/SGST check); rerun 2026-09-28 after 4C: unchanged |
 | `supabase/tests/capacity_logic.sql` | SQL editor | 29/29 (2026-09-28): windows, boundaries, caps, festival overrides, override reasons, confirm ranking, availability, per-day lock |
+| `web/src/lib/capacity.test.ts` | `npm test` | 4/4 (2026-09-29): order-to-pickup-window matching used by the calendar day view (mirrors `private.window_for`) |
 | `web/scripts/e2e/orders-4a.mjs` | Build, run `npm start -- -p 3100`, create QA users (`supabase/tests/qa_users.sql`), then `QA_PW=... npm run e2e:orders` | 29/29 |
 | `web/scripts/e2e/billing-4b.mjs` | Same setup, `npm run e2e:billing` | 17/19. The 2 failures were test-script issues (assertions depend on leftover data); the app behaviour was confirmed correct. Fix the assertions before relying on it. |
 
 Caveats:
 - SQL tests roll back, but they **consume order numbers** (`order_number_seq` is not transactional). Reset it with `alter sequence public.order_number_seq restart with 1001` **only while no real orders exist**.
 - The e2e scripts **commit data**. Run them against staging. Never run successful counter sales or bill issuing on the live project after launch: bills are permanent and consume real numbers.
-- **Nobody has clicked through the UI in a browser yet** (including the 4C Settings → Capacity section and the pickup-window panel). All checks so far are SQL- and HTTP-level. Do a full manual pass first; consider adding Playwright.
-- Timezone helpers were checked with a small script (9/9); there is no unit-test framework in the repo yet.
+- **Nobody has clicked through the UI in a browser yet** (including Settings → Capacity, the pickup-window panel, the calendar week/day views, and the login autofill). All checks so far are SQL-, HTTP-, typecheck- and build-level. Do a full manual pass first; consider adding Playwright. With an empty database most screens show only empty states, so the pass really needs staging data.
+- Timezone helpers were checked with a small script (9/9). Unit tests now run with `npm test`, but only the capacity helper has any.
 
 ## 6. Defaults chosen (owner has not confirmed)
 
@@ -128,17 +134,35 @@ Business decisions still needed are listed in PRD section 14 and TODO Phase 0. T
 
 ## 7. Known gaps and risks
 
-- No staging environment or deployment yet.
+- No staging environment. The production deployment talks to the only (live) Supabase project.
+- If the demo-login variables are ever set on Vercel, the public site pre-fills an admin login for the live database (owner's choice). Remove them before real orders exist.
 - No browser click-through; print layouts have not been checked with a real bill on a real 80mm printer.
 - Placeholder pages: KOT, Reports, Kitchen.
-- Not built yet: chef PIN sign-in on tablets (AC-34); editing items on a pending order (currently cancel and recreate); customer blocking UI; ready-stock stock counts (blocked on PRD decision 7).
+- Not built yet: chef PIN sign-in on tablets (AC-34); editing items on a pending order (currently cancel and recreate); customer blocking and no-show UI (designed, section 9); ready-stock stock counts (blocked on PRD decision 7).
 - `next start` warns about `outputFileTracingRoot` (multiple lockfiles detected on the machine). This is harmless locally; set `outputFileTracingRoot` in `next.config.ts` if it matters for deployment.
 - The Supabase free plan allows two active projects, and the owner already has one other active project. A staging project may require pausing a project or upgrading.
 
 ## 8. Suggested order of work
 
-1. Clone the repo, add the secret key, walk through every screen in a browser, and fix anything found.
-2. Staging project; rerun all SQL and e2e tests there.
-3. Phase 4C (TODO lists the items).
+1. Clone the repo, add the secret key, walk through every screen in a browser (locally or on the Vercel URL), and fix anything found.
+2. Staging project; rerun all SQL and e2e tests there. Consider pointing a Vercel preview environment at it.
+3. Finish Phase 4C: customer blocking and no-shows (design in section 9), then editing pending items; notification templates once the owner picks the channel.
 4. Phase 5 KOT and chef workflow: ticket tables with kitchen-scoped RLS, scheduled release via `pg_cron`, Supabase Realtime for the chef screen, packing and handover (which should mark orders completed and auto-issue bills).
 5. Chef PIN sign-in (Phase 3 leftover), then Reports (Phase 7), then the public website (Phase 6) when the owner is ready.
+
+## 9. Next feature, already designed: customer blocking and no-shows
+
+Agreed with the owner on 2026-09-29; not started. PRD 5F "Spam and no-show protection". The `customers` table already has `no_show_count`, `is_blocked` and `blocked_reason`, and `create_order` already refuses blocked phones without an admin override.
+
+- **Owner's decision:** recording a no-show does **not** change the order's status. Staff cancel or complete the order separately.
+- **Migration:**
+  - `orders.no_show_at` and `orders.no_show_by`, so each order counts at most once.
+  - `record_no_show(order)` for admin and counter: only for orders with a customer, past their pickup time, in confirmed/preparing/ready/cancelled. It adds one to `no_show_count` and writes an `order_events` row.
+  - `undo_no_show(order, reason)`, admin only.
+  - `set_customer_blocked(customer, blocked, reason)`, admin only, with a reason required both ways.
+  - Same conventions as the other write functions: security definer, role check, `private.fail`, revoke/grant.
+- **Screens:**
+  - Customer detail page `/admin/customers/[id]`: flags, block/unblock with reason, order history with no-shows marked.
+  - Order detail: "Blocked" and "N no-shows" badges next to the customer, a **Record no-show** button, and **Undo** for admins.
+  - New-order form: a warning under the phone field when the number belongs to a blocked customer or one with no-shows.
+- **Tests:** SQL checks in a rolled-back transaction. Give test orders an explicit high `order_number` so the live `B-1001` sequence is not consumed.
