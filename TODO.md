@@ -1,6 +1,6 @@
 # Bakery Project — To-do List
 
-Status (2026-09-30): Phases 3, 4A and 4B are built and tested. Phase 4C capacity caps, the shared override prompt, and calendar week/day views are built; all of it is on `main` and deployed to Vercel production (https://bakery-admin-ten.vercel.app). Customer blocking and no-shows were built and deployed on 2026-09-30. No browser click-through yet. **Next: editing items on pending orders**, then the rest of Phase 4C and Phase 5 (KOT). See HANDOVER.md for setup, architecture, and known gaps.
+Status (2026-09-30): Phases 3, 4A and 4B are built and tested. Phase 4C capacity caps, the shared override prompt, and calendar week/day views are built; all of it is on `main` and deployed to Vercel production (https://bakery-admin-ten.vercel.app). Customer blocking and no-shows were built and deployed on 2026-09-30; editing items on pending and confirmed orders was built the same day (not deployed yet). No browser click-through yet. **Next: a browser click-through on staging data, then Phase 5 (KOT)**; notification templates wait for the owner's channel decision. See HANDOVER.md for setup, architecture, and known gaps.
 Checkboxes represent actual completion, not intentions.
 
 ## Start here — next developer
@@ -138,7 +138,7 @@ Depends on: Phase 3.
 - [x] Admin override prompt as a shared component with mandatory reason and timeline entry (AC-36).
 - [ ] Notification templates: WhatsApp click-to-chat links for accepted/rejected/rescheduled/ready/cancelled, `notification_records` table, pending-order alert after N minutes (PRD 5F, AC-31).
 - [x] Customer blocking and no-show recording (HANDOVER section 9; `supabase/tests/no_show_logic.sql` 26/26). Recording a no-show does not change the order's status. **Browser click-through still to do.**
-- [ ] Editing items on a pending order (currently: cancel and recreate).
+- [x] Editing items on pending and confirmed orders (HANDOVER section 10; `supabase/tests/edit_items_logic.sql` 21/21). **Browser click-through still to do.** Phase 5 must turn edits to released work into acknowledged revisions.
 - [x] Demo-login autofill on `/login` for admin and chef, controlled by `DEMO_*` env variables (owner allowed it in production).
 - [x] First Vercel production deployment (`bakery-admin` project, manual `vercel deploy --prod` from `web/`; Git integration not connected).
 

@@ -906,6 +906,15 @@ export type Database = {
           p_reason: string
         }
       }
+      update_order_items: RpcReturnsOrder & {
+        Args: {
+          p_expected_version: number
+          p_lines: Json
+          p_order_id: string
+          p_override_reason?: string
+          p_reason?: string
+        }
+      }
       undo_no_show: RpcReturnsOrder & {
         Args: { p_expected_version: number; p_order_id: string; p_reason: string }
       }

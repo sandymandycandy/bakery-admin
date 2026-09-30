@@ -5,7 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getBusinessTimezone } from "@/lib/settings";
 import { addDays, dateToZonedLocal, zonedDayKey } from "@/lib/time";
 import { EmptyState, PageHeader } from "@/components/ui";
-import { OrderEntry, type CatalogueProduct } from "./order-entry";
+import { loadCatalogue } from "@/lib/catalogue";
+import { OrderEntry } from "./order-entry";
 
 export const metadata: Metadata = { title: "New order" };
 
@@ -16,41 +17,7 @@ export default async function NewOrderPage({ searchParams }: PageProps<"/admin/o
   const tz = await getBusinessTimezone();
 
   const supabase = await createClient();
-  const { data: products } = await supabase
-    .from("products")
-    .select("id, name, category_id, is_veg, contains_egg, prep_type, categories(name, sort_order), product_variants(id, name, price_paise, is_eggless, lead_time_minutes, kitchen_id, is_available, archived_at, sort_order)")
-    .is("archived_at", null)
-    .eq("is_available", true)
-    .order("name");
-
-  const sorted = [...(products ?? [])].sort(
-    (a, b) =>
-      (a.categories?.sort_order ?? 0) - (b.categories?.sort_order ?? 0) ||
-      (a.categories?.name ?? "").localeCompare(b.categories?.name ?? "") ||
-      a.name.localeCompare(b.name),
-  );
-  const catalogue: CatalogueProduct[] = sorted
-    .map((p) => ({
-      id: p.id,
-      name: p.name,
-      category: p.categories?.name ?? "",
-      categoryId: p.category_id,
-      isVeg: p.is_veg,
-      containsEgg: p.contains_egg,
-      prepType: p.prep_type,
-      variants: p.product_variants
-        .filter((v) => v.is_available && !v.archived_at)
-        .sort((a, b) => a.sort_order - b.sort_order || a.price_paise - b.price_paise)
-        .map((v) => ({
-          id: v.id,
-          name: v.name,
-          pricePaise: v.price_paise,
-          isEggless: v.is_eggless,
-          leadTimeMinutes: v.lead_time_minutes,
-          hasKitchen: Boolean(v.kitchen_id),
-        })),
-    }))
-    .filter((p) => p.variants.length > 0);
+  const catalogue = await loadCatalogue(supabase);
 
   const tomorrow = addDays(zonedDayKey(new Date(), tz), 1);
 

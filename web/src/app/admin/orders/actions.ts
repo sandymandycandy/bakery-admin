@@ -155,6 +155,44 @@ export async function rescheduleOrderAction(
   return { ok: true };
 }
 
+const editItemsSchema = z.object({
+  orderId: z.uuid(),
+  version: z.number().int(),
+  lines: z
+    .array(
+      z.union([
+        z.object({ lineId: z.uuid(), quantity: z.number().int().min(1).max(999), notes: z.string().max(500) }),
+        z.object({ variantId: z.uuid(), quantity: z.number().int().min(1).max(999), notes: z.string().max(500) }),
+      ]),
+    )
+    .min(1, "An order needs at least one item. Cancel the order instead.")
+    .max(50),
+  reason: optionalText(300),
+  overrideReason: optionalText(300),
+});
+
+// Replaces the order's lines: kept lines keep their price, new lines take today's (see update_order_items).
+export async function updateOrderItemsAction(input: z.input<typeof editItemsSchema>): Promise<Result> {
+  await assertRole(["admin", "counter"]);
+  const parsed = editItemsSchema.safeParse(input);
+  if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Check the items." };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("update_order_items", {
+    p_order_id: parsed.data.orderId,
+    p_expected_version: parsed.data.version,
+    p_lines: parsed.data.lines.map((l) =>
+      "lineId" in l
+        ? { line_id: l.lineId, quantity: l.quantity, notes: l.notes }
+        : { variant_id: l.variantId, quantity: l.quantity, notes: l.notes },
+    ),
+    p_reason: parsed.data.reason,
+    p_override_reason: parsed.data.overrideReason,
+  });
+  if (error) return rpcError(error);
+  await afterChange(parsed.data.orderId);
+  return { ok: true };
+}
+
 // ---------------------------------------------------------------------------
 // No-shows and customer flags (Phase 4C)
 // ---------------------------------------------------------------------------

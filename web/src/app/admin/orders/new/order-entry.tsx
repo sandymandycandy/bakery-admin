@@ -2,24 +2,15 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Badge, Button, Card, Checkbox, Field, Input, Textarea, VegMark, cx } from "@/components/ui";
+import { Alert, Button, Card, Checkbox, Field, Input, Textarea, cx } from "@/components/ui";
 import { SourceBadge } from "@/components/order-badges";
 import { formatLeadTime, formatPaise } from "@/lib/money";
 import { OverridePrompt } from "@/components/override-prompt";
 import { PickupWindows } from "@/components/pickup-windows";
+import { CataloguePicker, QuantityStepper } from "@/components/catalogue-picker";
+import type { CatalogueProduct } from "@/lib/catalogue";
 import { CustomerWarning } from "@/components/customer-warning";
 import { createOrderAction } from "../actions";
-
-export type CatalogueProduct = {
-  id: string;
-  name: string;
-  category: string;
-  categoryId: string;
-  isVeg: boolean;
-  containsEgg: boolean;
-  prepType: "made_to_order" | "ready_stock";
-  variants: { id: string; name: string; pricePaise: number; isEggless: boolean; leadTimeMinutes: number; hasKitchen: boolean }[];
-};
 
 type Line = { key: string; productId: string; variantId: string; quantity: number; notes: string };
 
@@ -40,7 +31,6 @@ export function OrderEntry({
 }) {
   const router = useRouter();
   const [idempotencyKey] = useState(() => crypto.randomUUID());
-  const [query, setQuery] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -57,11 +47,6 @@ export function OrderEntry({
     for (const product of catalogue) for (const variant of product.variants) map.set(variant.id, { product, variant });
     return map;
   }, [catalogue]);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return q ? catalogue.filter((p) => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q)) : catalogue;
-  }, [catalogue, query]);
 
   const total = lines.reduce((sum, l) => sum + (variantIndex.get(l.variantId)?.variant.pricePaise ?? 0) * l.quantity, 0);
   const maxLead = lines.reduce((max, l) => {
@@ -120,45 +105,7 @@ export function OrderEntry({
           <h2 className="text-lg font-semibold">Add items</h2>
           <SourceBadge source={source} />
         </div>
-        <label htmlFor="product-search" className="sr-only">Search products</label>
-        <Input
-          id="product-search"
-          type="search"
-          placeholder="Search products or categories"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          autoFocus
-        />
-        <ul className="mt-4 flex max-h-[32rem] flex-col gap-3 overflow-y-auto pr-1">
-          {filtered.length === 0 && <li className="py-6 text-center text-sm text-muted">No available products match.</li>}
-          {filtered.map((p) => (
-            <li key={p.id} className="rounded-lg border border-line p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">{p.name}</span>
-                <VegMark isVeg={p.isVeg} />
-                <span className="text-xs text-muted">{p.category}</span>
-                {p.prepType === "ready_stock" && <Badge>Ready stock</Badge>}
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {p.variants.map((v) => (
-                  <button
-                    key={v.id}
-                    type="button"
-                    onClick={() => addVariant(p.id, v.id)}
-                    className="rounded-lg border border-line bg-surface px-3 py-1.5 text-left text-sm hover:border-brand hover:bg-brand-soft"
-                  >
-                    <span className="font-medium">{v.name}</span> · {formatPaise(v.pricePaise)}
-                    {v.isEggless && <span className="ml-1 text-xs text-ok">Eggless</span>}
-                    {p.prepType === "made_to_order" && v.leadTimeMinutes > 0 && (
-                      <span className="ml-1 text-xs text-muted">({formatLeadTime(v.leadTimeMinutes)})</span>
-                    )}
-                    {p.prepType === "made_to_order" && !v.hasKitchen && <span className="ml-1 text-xs text-danger">No kitchen</span>}
-                  </button>
-                ))}
-              </div>
-            </li>
-          ))}
-        </ul>
+        <CataloguePicker catalogue={catalogue} onAdd={addVariant} autoFocus />
       </Card>
 
       {/* Order */}
@@ -184,21 +131,13 @@ export function OrderEntry({
                       </div>
                       <p className="whitespace-nowrap font-medium">{formatPaise(entry.variant.pricePaise * l.quantity)}</p>
                     </div>
-                    <div className="mt-2 flex items-center gap-2">
-                      <Button type="button" variant="secondary" className="px-2.5 py-1" aria-label={`Decrease ${entry.product.name}`}
-                        onClick={() => updateLine(l.key, { quantity: Math.max(1, l.quantity - 1) })}>−</Button>
-                      <label className="sr-only" htmlFor={`qty-${l.key}`}>Quantity</label>
-                      <Input id={`qty-${l.key}`} inputMode="numeric" className="w-16 text-center" value={l.quantity}
-                        onChange={(e) => {
-                          const n = Number(e.target.value.replace(/\D/g, ""));
-                          updateLine(l.key, { quantity: Math.min(999, Math.max(1, n || 1)) });
-                        }} />
-                      <Button type="button" variant="secondary" className="px-2.5 py-1" aria-label={`Increase ${entry.product.name}`}
-                        onClick={() => updateLine(l.key, { quantity: Math.min(999, l.quantity + 1) })}>+</Button>
-                      <Button type="button" variant="ghost" className="ml-auto" onClick={() => { setError(null); setLines((c) => c.filter((x) => x.key !== l.key)); }}>
-                        Remove
-                      </Button>
-                    </div>
+                    <QuantityStepper
+                      id={l.key}
+                      label={entry.product.name}
+                      quantity={l.quantity}
+                      onChange={(quantity) => updateLine(l.key, { quantity })}
+                      onRemove={() => { setError(null); setLines((c) => c.filter((x) => x.key !== l.key)); }}
+                    />
                     <label className="sr-only" htmlFor={`notes-${l.key}`}>Item notes</label>
                     <Input id={`notes-${l.key}`} className="mt-2" placeholder="Notes, e.g. cake message" maxLength={500}
                       value={l.notes} onChange={(e) => updateLine(l.key, { notes: e.target.value })} />

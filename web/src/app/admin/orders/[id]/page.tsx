@@ -12,6 +12,8 @@ import { Alert, Badge, Card, PageHeader, VegMark } from "@/components/ui";
 import { SourceBadge, StatusBadge } from "@/components/order-badges";
 import { NoShowPanel, OrderActions, PaymentForm } from "./order-actions";
 import { BillPanel, DiscountForm } from "./billing-panel";
+import { EditItems } from "./edit-items";
+import { loadCatalogue } from "@/lib/catalogue";
 
 export const metadata: Metadata = { title: "Order" };
 
@@ -26,6 +28,7 @@ const eventLabel: Record<string, string> = {
   refund_recorded: "Refund recorded",
   discount_applied: "Discount applied",
   discount_removed: "Discount removed",
+  items_changed: "Items changed",
   bill_issued: "GST bill issued",
   credit_note_issued: "Credit note issued",
   completed: "Completed",
@@ -71,6 +74,38 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
     Boolean(customer) && !noShow?.no_show_at && NO_SHOW_STATUSES.includes(order.status) &&
     order.due_at !== null && new Date(order.due_at) <= new Date();
   const unmapped = (items ?? []).filter((i) => i.prep_type === "made_to_order" && !i.kitchen_id);
+  // Items can change until kitchen work starts; confirmed orders only by an admin (update_order_items).
+  const canEditItems = !bill && (["draft", "pending_confirmation"].includes(order.status) || (order.status === "confirmed" && isAdmin));
+  const catalogue = canEditItems ? await loadCatalogue(supabase) : [];
+
+  const itemList = (
+    <ul className="divide-y divide-line">
+      {(items ?? []).map((i) => (
+        <li key={i.id} className="flex flex-wrap items-start justify-between gap-3 py-3">
+          <div className="min-w-0">
+            <p className="font-medium">
+              {i.quantity - i.cancelled_quantity} × {i.product_name} — {i.variant_name}
+            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+              <VegMark isVeg={i.is_veg} />
+              {i.is_eggless ? <Badge tone="ok">Eggless</Badge> : i.contains_egg && <Badge>Contains egg</Badge>}
+              {i.prep_type === "ready_stock" ? (
+                <Badge>Ready stock</Badge>
+              ) : (
+                <Badge tone={i.kitchen_id ? "brand" : "danger"}>{i.kitchen_id ? kitchenName.get(i.kitchen_id) : "No kitchen"}</Badge>
+              )}
+              {i.allergens.length > 0 && <span className="text-xs text-muted">Allergens: {i.allergens.join(", ")}</span>}
+            </div>
+            {i.notes && <p className="mt-1 text-sm">“{i.notes}”</p>}
+          </div>
+          <div className="text-right">
+            <p className="font-medium">{formatPaise(i.line_total_paise)}</p>
+            <p className="text-xs text-muted">{formatPaise(i.unit_price_paise)} each · GST {i.tax_rate_bps / 100}%</p>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
 
   return (
     <>
@@ -113,32 +148,30 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
         <div className="grid gap-6 lg:grid-cols-3">
           <Card className="lg:col-span-2">
             <h2 className="mb-3 text-lg font-semibold">Items</h2>
-            <ul className="divide-y divide-line">
-              {(items ?? []).map((i) => (
-                <li key={i.id} className="flex flex-wrap items-start justify-between gap-3 py-3">
-                  <div className="min-w-0">
-                    <p className="font-medium">
-                      {i.quantity - i.cancelled_quantity} × {i.product_name} — {i.variant_name}
-                    </p>
-                    <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
-                      <VegMark isVeg={i.is_veg} />
-                      {i.is_eggless ? <Badge tone="ok">Eggless</Badge> : i.contains_egg && <Badge>Contains egg</Badge>}
-                      {i.prep_type === "ready_stock" ? (
-                        <Badge>Ready stock</Badge>
-                      ) : (
-                        <Badge tone={i.kitchen_id ? "brand" : "danger"}>{i.kitchen_id ? kitchenName.get(i.kitchen_id) : "No kitchen"}</Badge>
-                      )}
-                      {i.allergens.length > 0 && <span className="text-xs text-muted">Allergens: {i.allergens.join(", ")}</span>}
-                    </div>
-                    {i.notes && <p className="mt-1 text-sm">“{i.notes}”</p>}
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium">{formatPaise(i.line_total_paise)}</p>
-                    <p className="text-xs text-muted">{formatPaise(i.unit_price_paise)} each · GST {i.tax_rate_bps / 100}%</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            {canEditItems ? (
+              <EditItems
+                key={`e-${order.version}`}
+                orderId={order.id}
+                version={order.version ?? 0}
+                isAdmin={isAdmin}
+                isConfirmed={order.status === "confirmed"}
+                discountPaise={order.discount_paise ?? 0}
+                catalogue={catalogue}
+                existing={(items ?? []).map((i) => ({
+                  id: i.id,
+                  productName: i.product_name,
+                  variantName: i.variant_name,
+                  unitPricePaise: i.unit_price_paise,
+                  quantity: i.quantity,
+                  notes: i.notes ?? "",
+                  isEggless: i.is_eggless,
+                }))}
+              >
+                {itemList}
+              </EditItems>
+            ) : (
+              itemList
+            )}
             <dl className="mt-3 flex flex-col gap-1 border-t border-line pt-3 text-sm">
               {(order.discount_paise ?? 0) > 0 && (
                 <>
@@ -297,6 +330,19 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
                     <p className="text-xs text-muted">{formatDateTime(e.occurred_at, tz)} · {who(e.actor_id)}</p>
                     {e.event_type === "rescheduled" && typeof data.from === "string" && typeof data.to === "string" && (
                       <p className="text-xs">{formatDateTime(data.from, tz)} → {formatDateTime(data.to, tz)}</p>
+                    )}
+                    {e.event_type === "items_changed" && Array.isArray(data.changes) && (
+                      <ul className="text-xs">
+                        {(data.changes as { item: string; from: number; to: number; notes?: string }[]).map((c, n) => (
+                          <li key={n}>
+                            {c.item}: {c.from === 0 ? `added ${c.to}` : c.to === 0 ? `removed ${c.from}` : c.from === c.to ? "notes changed" : `${c.from} → ${c.to}`}
+                            {c.notes !== undefined && c.from !== c.to && " (notes changed)"}
+                          </li>
+                        ))}
+                        {typeof data.total_from === "number" && typeof data.total_to === "number" && (
+                          <li>Total {formatPaise(data.total_from)} → {formatPaise(data.total_to)}</li>
+                        )}
+                      </ul>
                     )}
                     {typeof data.no_show_count === "number" && (
                       <p className="text-xs">Customer now has {data.no_show_count} no-show{data.no_show_count === 1 ? "" : "s"}</p>

@@ -10,7 +10,7 @@ Date: 2026-09-30 (first written 2026-09-27). Read this first, then [TODO.md](TOD
 | 3 Foundation | **Done** | Staff login, roles, kitchens, products/variants/categories, settings, audit log. Chef PIN sign-in **not built**. |
 | 4A Orders | **Done** | In-store and call orders, two order lists, order detail, confirm/reject/cancel/reschedule, payments and refunds, calendar, opening hours and closures, customers. |
 | 4B Billing | **Done** | Counter quick sale, discounts, GST bills (gap-free per financial year), credit notes, 80mm and A4 print. |
-| 4C | **In progress** | Done: pickup windows, category caps, festival overrides, shared override prompt, calendar week and day views (day view grouped by pickup window), demo-login autofill, customer blocking and no-shows (section 9). Left: editing pending items, notification templates (blocked on owner decisions). None of 4C has been clicked through in a browser. See TODO "Phase 4C". |
+| 4C | **In progress** | Done: pickup windows, category caps, festival overrides, shared override prompt, calendar week and day views (day view grouped by pickup window), demo-login autofill, customer blocking and no-shows (section 9), editing items on pending and confirmed orders (section 10). Left: notification templates (blocked on owner decisions). None of 4C has been clicked through in a browser. See TODO "Phase 4C". |
 | 5 KOT / chef | Not started | Kitchen tickets, chef queue, packing, handover. The `/kitchen` page is a placeholder. |
 | 6 Public website | Not started | Deferred by the owner ("leave the public page for now"). |
 | 7–9 | Not started | Reports, rehearsal, launch, Release 1.1 exceptions. |
@@ -71,7 +71,7 @@ auri bakery/
 ### How writes work (important)
 
 - **Catalogue, staff, settings, hours, and closures** are written directly through Supabase with row-level security (RLS). Only admins can write.
-- **Orders, payments, bills, and credit notes can only be written through Postgres functions**: `create_order`, `confirm_order`, `reject_order`, `cancel_order`, `reschedule_order`, `record_payment`, `apply_discount`, `issue_bill`, `issue_credit_note`, `counter_sale`. Staff have **no insert or update grants** on those tables. Each function:
+- **Orders, payments, bills, and credit notes can only be written through Postgres functions**: `create_order`, `confirm_order`, `reject_order`, `cancel_order`, `reschedule_order`, `update_order_items`, `record_payment`, `apply_discount`, `issue_bill`, `issue_credit_note`, `counter_sale`. Staff have **no insert or update grants** on those tables. Each function:
   - checks the caller's role itself;
   - validates everything (availability, opening hours, lead time, kitchen mapping, amounts);
   - takes an **idempotency key**, so retries never duplicate anything;
@@ -94,7 +94,7 @@ auri bakery/
 
 Files in `supabase/migrations/` were applied to the live project in order through the Supabase MCP server. The CLI is not linked. To continue:
 
-- Install the Supabase CLI and run `supabase link --project-ref hljkydruionasnouyrpu`. Check that the remote migration history matches the files (names: `foundation`, `orders`, `billing`, `bill_gst_split_per_rate`, `bill_gst_split_integer_division`, `counter_sale_precheck`, `capacity`, `capacity_enforcement`, `capacity_review_fixes`, `no_shows`).
+- Install the Supabase CLI and run `supabase link --project-ref hljkydruionasnouyrpu`. Check that the remote migration history matches the files (names: `foundation`, `orders`, `billing`, `bill_gst_split_per_rate`, `bill_gst_split_integer_division`, `counter_sale_precheck`, `capacity`, `capacity_enforcement`, `capacity_review_fixes`, `no_shows`, `edit_order_items`).
   - The last GST-split fix was applied as `bill_gst_split_integer_division`, but its file is `20260927000310_bill_gst_split_per_rate.sql` (the file already contains the fixed version). Reconcile the history names when linking.
 - New tables in `public` get full API access by default in Supabase. Every migration so far **revokes** that and grants only what is needed; keep doing this, and enable RLS on every table.
 - After schema changes, regenerate `web/src/lib/database.types.ts` (`supabase gen types typescript`). The current file was condensed by hand from generated output (order tables are marked `Insert: never`); the Phase 4C tables and functions were added by hand in the same shape. Replacing it with fully generated types is fine.
@@ -109,6 +109,7 @@ Files in `supabase/migrations/` were applied to the live project in order throug
 | `supabase/tests/billing_logic.sql` | SQL editor | all pass (includes the per-rate CGST/SGST check); rerun 2026-09-28 after 4C: unchanged |
 | `supabase/tests/capacity_logic.sql` | SQL editor | 29/29 (2026-09-28): windows, boundaries, caps, festival overrides, override reasons, confirm ranking, availability, per-day lock |
 | `supabase/tests/no_show_logic.sql` | SQL editor | 26/26 (2026-09-30): roles, status and pickup-time rules, once per order, version conflict, undo, block/unblock reasons and history, blocked phone refused, no direct writes. Inserts its orders with numbers from 990001, so it does not consume `order_number_seq`. |
+| `supabase/tests/edit_items_logic.sql` | SQL editor | 21/21 (2026-09-30): roles and statuses, kept price vs today's price, add/remove/quantity/notes, lead time and category caps on what the edit adds, overrides, billed orders refused, discount capped, version conflicts, timeline. Orders from 990101. |
 | `web/src/lib/capacity.test.ts` | `npm test` | 4/4 (2026-09-29): order-to-pickup-window matching used by the calendar day view (mirrors `private.window_for`) |
 | `web/scripts/e2e/orders-4a.mjs` | Build, run `npm start -- -p 3100`, create QA users (`supabase/tests/qa_users.sql`), then `QA_PW=... npm run e2e:orders` | 29/29 |
 | `web/scripts/e2e/billing-4b.mjs` | Same setup, `npm run e2e:billing` | 17/19. The 2 failures were test-script issues (assertions depend on leftover data); the app behaviour was confirmed correct. Fix the assertions before relying on it. |
@@ -139,7 +140,7 @@ Business decisions still needed are listed in PRD section 14 and TODO Phase 0. T
 - If the demo-login variables are ever set on Vercel, the public site pre-fills an admin login for the live database (owner's choice). Remove them before real orders exist.
 - No browser click-through; print layouts have not been checked with a real bill on a real 80mm printer.
 - Placeholder pages: KOT, Reports, Kitchen.
-- Not built yet: chef PIN sign-in on tablets (AC-34); editing items on a pending order (currently cancel and recreate); ready-stock stock counts (blocked on PRD decision 7).
+- Not built yet: chef PIN sign-in on tablets (AC-34); ready-stock stock counts (blocked on PRD decision 7).
 - `next start` warns about `outputFileTracingRoot` (multiple lockfiles detected on the machine). This is harmless locally; set `outputFileTracingRoot` in `next.config.ts` if it matters for deployment.
 - The Supabase free plan allows two active projects, and the owner already has one other active project. A staging project may require pausing a project or upgrading.
 
@@ -147,8 +148,8 @@ Business decisions still needed are listed in PRD section 14 and TODO Phase 0. T
 
 1. Clone the repo, add the secret key, walk through every screen in a browser (locally or on the Vercel URL), and fix anything found.
 2. Staging project; rerun all SQL and e2e tests there. Consider pointing a Vercel preview environment at it.
-3. Finish Phase 4C: editing pending items; notification templates once the owner picks the channel.
-4. Phase 5 KOT and chef workflow: ticket tables with kitchen-scoped RLS, scheduled release via `pg_cron`, Supabase Realtime for the chef screen, packing and handover (which should mark orders completed and auto-issue bills).
+3. Finish Phase 4C: notification templates once the owner picks the channel.
+4. Phase 5 KOT and chef workflow (read section 10 first): ticket tables with kitchen-scoped RLS, scheduled release via `pg_cron`, Supabase Realtime for the chef screen, packing and handover (which should mark orders completed and auto-issue bills).
 5. Chef PIN sign-in (Phase 3 leftover), then Reports (Phase 7), then the public website (Phase 6) when the owner is ready.
 
 ## 9. Customer blocking and no-shows (built 2026-09-30)
@@ -170,3 +171,15 @@ Agreed with the owner on 2026-09-29; built 2026-09-30 (migration `20260930000100
   - New-order form: a warning under the phone field when the number belongs to a blocked customer or one with no-shows (`src/components/customer-warning.tsx`).
   - `order_summaries` was created with `o.*` before these columns existed, so the order page reads `no_show_at`/`no_show_by` from `orders` directly.
 - **Tests:** SQL checks in a rolled-back transaction. Give test orders an explicit high `order_number` so the live `B-1001` sequence is not consumed.
+
+## 10. Editing items on an order (built 2026-09-30)
+
+Migration `20260930000200_edit_order_items.sql` (applied to the live project); `update_order_items(order, version, lines, reason, override_reason)`. The order page shows **Edit items** in the Items card.
+
+- **Who and when:** admin and counter staff on draft and pending orders; admins only on confirmed orders, with a required reason. Never on preparing, ready or closed orders, or once a GST bill exists (credit note instead).
+- **Lines:** the function takes the full new list. Existing lines (`line_id`) keep their price snapshot and change only quantity and notes; new lines (`variant_id`) take today's catalogue price; lines left out are deleted (the audit log keeps them).
+- **Checks, only on what the edit adds:** availability of new or increased items (not overridable, as in `create_order`); preparation time of new or increased made-to-order items; daily caps for categories the order did not have before, counted against every other order under the same per-day lock as `capacity_problem`. A kitchen must be mapped before a made-to-order item is added to a confirmed order. Lead-time and cap refusals can be overridden by an admin with a reason.
+- **Money:** totals are recalculated with `recalc_order_totals`. A discount keeps its rupee amount, capped at the new subtotal. Overpayments show the existing "Refund due" alert.
+- **Timeline:** one `items_changed` event with each change (`from`/`to` quantities, notes changes) and the old and new totals.
+- **Phase 5 must change this function:** once kitchen tickets exist, edits to released lines must produce kitchen-acknowledged ticket revisions (AC-12), and reductions of released lines must use `cancelled_quantity` instead of deleting rows.
+- The product search and quantity controls are shared with the new-order form (`src/components/catalogue-picker.tsx`, `src/lib/catalogue.ts`).
