@@ -1,6 +1,6 @@
 # Bakery Project — To-do List
 
-Status (2026-09-30): Phases 3, 4A and 4B are built and tested. Phase 4C capacity caps, the shared override prompt, and calendar week/day views are built; all of it is on `main` and deployed to Vercel production (https://bakery-admin-ten.vercel.app). Customer blocking and no-shows were built and deployed on 2026-09-30; editing items on pending and confirmed orders was built the same day (not deployed yet). No browser click-through yet. **Next: a browser click-through on staging data, then Phase 5 (KOT)**; notification templates wait for the owner's channel decision. See HANDOVER.md for setup, architecture, and known gaps.
+Status (2026-09-30): Phases 3, 4A and 4B are built and tested. Phase 4C capacity caps, the shared override prompt, and calendar week/day views are built; all of it is on `main` and deployed to Vercel production (https://bakery-admin-ten.vercel.app). Customer blocking and no-shows were built and deployed on 2026-09-30; editing items on pending and confirmed orders was built and deployed the same day. No browser click-through yet. **Next: a browser click-through on staging data, then Phase 5 (KOT)**; notification templates wait for the owner's channel decision. See HANDOVER.md for setup, architecture, and known gaps.
 Checkboxes represent actual completion, not intentions.
 
 ## Start here — next developer
