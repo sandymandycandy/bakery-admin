@@ -56,7 +56,7 @@ Tickets hold **no prices, no customer name, phone or notes, and no internal note
 |---|---|
 | `id uuid pk` | |
 | `ticket_id uuid not null → kitchen_tickets on delete cascade` | |
-| `order_item_id uuid not null unique → order_items on delete cascade` | |
+| `order_item_id uuid unique → order_items on delete set null` | Nullable: when an edit deletes an order line, a stop-work ticket keeps its snapshot line so the chef still sees what to stop. |
 | `line_no integer not null` | Copied from the order line. |
 | `product_name`, `variant_name` | Snapshot. |
 | `quantity integer not null` | Active quantity (`quantity − cancelled_quantity` of the order line). |
