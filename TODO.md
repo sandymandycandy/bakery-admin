@@ -1,6 +1,6 @@
 # Bakery Project — To-do List
 
-Status (2026-09-30): Phases 3, 4A and 4B are built and tested. Phase 4C capacity caps, the shared override prompt, and calendar week/day views are built; all of it is on `main` and deployed to Vercel production (https://bakery-admin-ten.vercel.app). No browser click-through yet. **Next: customer blocking and no-shows (designed in [HANDOVER.md](HANDOVER.md) section 9)**, then the rest of Phase 4C and Phase 5 (KOT). See HANDOVER.md for setup, architecture, and known gaps.
+Status (2026-09-30): Phases 3, 4A and 4B are built and tested. Phase 4C capacity caps, the shared override prompt, and calendar week/day views are built; all of it is on `main` and deployed to Vercel production (https://bakery-admin-ten.vercel.app). Customer blocking and no-shows were built on 2026-09-30 (not deployed yet). No browser click-through yet. **Next: editing items on pending orders**, then the rest of Phase 4C and Phase 5 (KOT). See HANDOVER.md for setup, architecture, and known gaps.
 Checkboxes represent actual completion, not intentions.
 
 ## Start here — next developer
@@ -137,7 +137,7 @@ Depends on: Phase 3.
 - [x] Calendar week and day views (day view grouped by pickup window with window and category usage). **Browser click-through still to do** (no orders in the database yet).
 - [x] Admin override prompt as a shared component with mandatory reason and timeline entry (AC-36).
 - [ ] Notification templates: WhatsApp click-to-chat links for accepted/rejected/rescheduled/ready/cancelled, `notification_records` table, pending-order alert after N minutes (PRD 5F, AC-31).
-- [ ] Customer blocking and no-show recording screens (columns exist on `customers`; enforcement exists in `create_order`). **Designed and agreed; see HANDOVER section 9.** Recording a no-show does not change the order's status.
+- [x] Customer blocking and no-show recording (HANDOVER section 9; `supabase/tests/no_show_logic.sql` 26/26). Recording a no-show does not change the order's status. **Browser click-through still to do.**
 - [ ] Editing items on a pending order (currently: cancel and recreate).
 - [x] Demo-login autofill on `/login` for admin and chef, controlled by `DEMO_*` env variables (owner allowed it in production).
 - [x] First Vercel production deployment (`bakery-admin` project, manual `vercel deploy --prod` from `web/`; Git integration not connected).

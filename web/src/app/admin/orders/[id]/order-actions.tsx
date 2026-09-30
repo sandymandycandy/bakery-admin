@@ -10,9 +10,11 @@ import { paiseToRupeesInput } from "@/lib/money";
 import {
   cancelOrderAction,
   confirmOrderAction,
+  recordNoShowAction,
   recordPaymentAction,
   rejectOrderAction,
   rescheduleOrderAction,
+  undoNoShowAction,
 } from "../actions";
 
 type Failure = { message: string; kind?: string };
@@ -160,6 +162,79 @@ export function OrderActions({
           onOverride={(reason) => run(failed.retry, reason)}
         />
       ))}
+    </div>
+  );
+}
+
+// Records that the customer did not collect. The order's status is left alone: staff cancel
+// or complete it separately. Admins can undo with a reason.
+export function NoShowPanel({
+  orderId,
+  version,
+  isAdmin,
+  canRecord,
+  recorded,
+}: {
+  orderId: string;
+  version: number;
+  isAdmin: boolean;
+  canRecord: boolean;
+  recorded: { label: string } | null;
+}) {
+  const router = useRouter();
+  const [undoing, setUndoing] = useState(false);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<Failure | null>(null);
+  const [pending, start] = useTransition();
+
+  function run(attempt: () => Promise<{ ok?: boolean; message?: string; kind?: string }>) {
+    setError(null);
+    start(async () => {
+      const result = await attempt();
+      if (result.ok) {
+        setUndoing(false);
+        setReason("");
+        router.refresh();
+      } else {
+        setError({ message: result.message ?? "Something went wrong.", kind: result.kind });
+      }
+    });
+  }
+
+  if (!recorded && !canRecord) return null;
+
+  return (
+    <div className="flex flex-col gap-2">
+      {recorded ? (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="font-medium text-danger">No-show recorded</span>
+          <span className="text-muted">{recorded.label}</span>
+          {isAdmin && !undoing && (
+            <Button variant="secondary" onClick={() => setUndoing(true)}>Undo</Button>
+          )}
+        </div>
+      ) : (
+        <div>
+          <Button variant="secondary" disabled={pending} onClick={() => run(() => recordNoShowAction({ orderId, version }))}>
+            {pending ? "Saving…" : "Record no-show"}
+          </Button>
+          <p className="mt-1 text-xs text-muted">Counts against the customer. It does not cancel or complete the order.</p>
+        </div>
+      )}
+      {undoing && (
+        <div className="flex flex-col gap-2 rounded-lg border border-line p-4">
+          <Field label="Reason for undoing" htmlFor="undo-no-show-reason">
+            <Input id="undo-no-show-reason" value={reason} onChange={(e) => { setError(null); setReason(e.target.value); }} maxLength={300} autoFocus placeholder="e.g. Customer collected late" />
+          </Field>
+          <div className="flex gap-2">
+            <Button disabled={pending || reason.trim().length < 3} onClick={() => run(() => undoNoShowAction({ orderId, version, reason }))}>
+              {pending ? "Saving…" : "Undo no-show"}
+            </Button>
+            <Button variant="secondary" onClick={() => { setUndoing(false); setError(null); }}>Close</Button>
+          </div>
+        </div>
+      )}
+      {error && <ErrorBox error={error} onReload={() => { setError(null); router.refresh(); }} />}
     </div>
   );
 }

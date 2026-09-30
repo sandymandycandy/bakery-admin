@@ -374,6 +374,27 @@ export type Database = {
         }
         Relationships: []
       }
+      customer_events: {
+        Row: {
+          actor_id: string | null
+          customer_id: string
+          event_type: "blocked" | "unblocked"
+          id: number
+          occurred_at: string
+          reason: string
+        }
+        Insert: never
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: "customer_events_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customers: {
         Row: {
           blocked_reason: string | null
@@ -550,7 +571,8 @@ export type Database = {
         ]
       }
       orders: {
-        Row: OrderRow
+        // order_summaries was created with o.* before these columns existed, so only the table has them.
+        Row: OrderRow & { no_show_at: string | null; no_show_by: string | null }
         Insert: never
         Update: never
         Relationships: [
@@ -843,6 +865,11 @@ export type Database = {
         Args: { p_date: string; p_exclude_order?: string }
         Returns: Json
       }
+      set_customer_blocked: {
+        Args: { p_blocked: boolean; p_customer_id: string; p_reason: string }
+        Returns: Database["public"]["Tables"]["customers"]["Row"]
+        SetofOptions: { from: "*"; to: "customers"; isOneToOne: true; isSetofReturn: false }
+      }
       set_date_windows: {
         Args: { p_date: string; p_note: string; p_windows: Json }
         Returns: undefined
@@ -850,6 +877,9 @@ export type Database = {
       set_pickup_windows: {
         Args: { p_weekdays: number[]; p_windows: Json }
         Returns: undefined
+      }
+      record_no_show: RpcReturnsOrder & {
+        Args: { p_expected_version: number; p_order_id: string }
       }
       record_payment: {
         Args: {
@@ -875,6 +905,9 @@ export type Database = {
           p_override_reason?: string
           p_reason: string
         }
+      }
+      undo_no_show: RpcReturnsOrder & {
+        Args: { p_expected_version: number; p_order_id: string; p_reason: string }
       }
     }
     Enums: {

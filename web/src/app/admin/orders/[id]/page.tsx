@@ -10,7 +10,7 @@ import { paymentMethodLabel, sourceLabel } from "@/lib/orders";
 import { dateToZonedLocal, formatDateTime } from "@/lib/time";
 import { Alert, Badge, Card, PageHeader, VegMark } from "@/components/ui";
 import { SourceBadge, StatusBadge } from "@/components/order-badges";
-import { OrderActions, PaymentForm } from "./order-actions";
+import { NoShowPanel, OrderActions, PaymentForm } from "./order-actions";
 import { BillPanel, DiscountForm } from "./billing-panel";
 
 export const metadata: Metadata = { title: "Order" };
@@ -29,7 +29,12 @@ const eventLabel: Record<string, string> = {
   bill_issued: "GST bill issued",
   credit_note_issued: "Credit note issued",
   completed: "Completed",
+  no_show_recorded: "No-show recorded",
+  no_show_undone: "No-show undone",
 };
+
+// PRD 5F: only orders the customer should have collected can count as a no-show.
+const NO_SHOW_STATUSES = ["confirmed", "preparing", "ready", "cancelled"];
 
 export default async function OrderPage({ params, searchParams }: PageProps<"/admin/orders/[id]">) {
   const staff = await requireRole(["admin", "counter"]);
@@ -40,7 +45,7 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
   const tz = await getBusinessTimezone();
 
   const supabase = await createClient();
-  const [{ data: order }, { data: items }, { data: payments }, { data: events }, { data: kitchens }, { data: staffRows }, { data: bill }, { data: settings }] =
+  const [{ data: order }, { data: items }, { data: payments }, { data: events }, { data: kitchens }, { data: staffRows }, { data: bill }, { data: settings }, { data: noShow }] =
     await Promise.all([
       supabase.from("order_summaries").select("*").eq("id", id).maybeSingle(),
       supabase.from("order_items").select("*").eq("order_id", id).order("line_no"),
@@ -50,6 +55,8 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
       supabase.from("staff_profiles").select("user_id, full_name"),
       supabase.from("bills").select("id, bill_number, total_paise, issued_at, credit_notes(id, credit_note_number, total_paise, reason, issued_at)").eq("order_id", id).maybeSingle(),
       supabase.from("business_settings").select("counter_discount_limit_bps").single(),
+      // order_summaries predates the no-show columns, so read them (and the customer's flags) from orders.
+      supabase.from("orders").select("no_show_at, no_show_by, customers(id, is_blocked, no_show_count)").eq("id", id).maybeSingle(),
     ]);
   if (!order || !order.id || !order.status || !order.source) notFound();
 
@@ -59,6 +66,10 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
   const balance = order.balance_paise ?? 0;
   const refundable = (order.paid_paise ?? 0) - (order.refunded_paise ?? 0);
   const closed = ["completed", "rejected", "cancelled"].includes(order.status);
+  const customer = noShow?.customers ?? null;
+  const canRecordNoShow =
+    Boolean(customer) && !noShow?.no_show_at && NO_SHOW_STATUSES.includes(order.status) &&
+    order.due_at !== null && new Date(order.due_at) <= new Date();
   const unmapped = (items ?? []).filter((i) => i.prep_type === "made_to_order" && !i.kitchen_id);
 
   return (
@@ -171,7 +182,17 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
               </div>
               <div>
                 <dt className="text-muted">Customer</dt>
-                <dd className="font-medium">{order.customer_name ?? "Walk-in"}</dd>
+                <dd className="flex flex-wrap items-center gap-2 font-medium">
+                  {customer && isAdmin ? (
+                    <Link href={`/admin/customers/${customer.id}`} className="hover:text-brand hover:underline">{order.customer_name ?? "Customer"}</Link>
+                  ) : (
+                    order.customer_name ?? "Walk-in"
+                  )}
+                  {customer?.is_blocked && <Badge tone="danger">Blocked</Badge>}
+                  {customer && customer.no_show_count > 0 && (
+                    <Badge tone="warn">{customer.no_show_count} no-show{customer.no_show_count === 1 ? "" : "s"}</Badge>
+                  )}
+                </dd>
                 {order.customer_phone && (
                   <dd><a href={`tel:${order.customer_phone}`} className="text-brand hover:underline">{order.customer_phone}</a></dd>
                 )}
@@ -187,6 +208,16 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
                 <div><dt className="text-muted">Internal notes</dt><dd>{order.internal_notes}</dd></div>
               )}
             </dl>
+            <div className="mt-4">
+              <NoShowPanel
+                key={`n-${order.version}`}
+                orderId={order.id}
+                version={order.version ?? 0}
+                isAdmin={isAdmin}
+                canRecord={canRecordNoShow}
+                recorded={noShow?.no_show_at ? { label: `${formatDateTime(noShow.no_show_at, tz)} · ${who(noShow.no_show_by)}` } : null}
+              />
+            </div>
             <div className="mt-5 border-t border-line pt-4">
               <OrderActions
                 key={order.version}
@@ -266,6 +297,9 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
                     <p className="text-xs text-muted">{formatDateTime(e.occurred_at, tz)} · {who(e.actor_id)}</p>
                     {e.event_type === "rescheduled" && typeof data.from === "string" && typeof data.to === "string" && (
                       <p className="text-xs">{formatDateTime(data.from, tz)} → {formatDateTime(data.to, tz)}</p>
+                    )}
+                    {typeof data.no_show_count === "number" && (
+                      <p className="text-xs">Customer now has {data.no_show_count} no-show{data.no_show_count === 1 ? "" : "s"}</p>
                     )}
                     {typeof data.amount_paise === "number" && <p className="text-xs">{formatPaise(data.amount_paise)}</p>}
                     {typeof data.bill_number === "string" && <p className="font-mono text-xs">{data.bill_number}</p>}

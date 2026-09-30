@@ -155,6 +155,61 @@ export async function rescheduleOrderAction(
   return { ok: true };
 }
 
+// ---------------------------------------------------------------------------
+// No-shows and customer flags (Phase 4C)
+// ---------------------------------------------------------------------------
+
+// Recording a no-show does not change the order's status (owner's decision, 2026-09-29).
+export async function recordNoShowAction(input: { orderId: string; version: number }): Promise<Result> {
+  await assertRole(["admin", "counter"]);
+  const parsed = transitionSchema.safeParse(input);
+  if (!parsed.success) return { message: "Invalid request." };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("record_no_show", {
+    p_order_id: parsed.data.orderId,
+    p_expected_version: parsed.data.version,
+  });
+  if (error) return rpcError(error);
+  await afterChange(parsed.data.orderId);
+  revalidatePath("/admin/customers", "layout");
+  return { ok: true };
+}
+
+export async function undoNoShowAction(input: z.input<typeof transitionSchema>): Promise<Result> {
+  await assertRole(["admin"]);
+  const parsed = transitionSchema.safeParse(input);
+  if (!parsed.success || !parsed.data.reason) return { message: "Give a reason for undoing the no-show." };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("undo_no_show", {
+    p_order_id: parsed.data.orderId,
+    p_expected_version: parsed.data.version,
+    p_reason: parsed.data.reason,
+  });
+  if (error) return rpcError(error);
+  await afterChange(parsed.data.orderId);
+  revalidatePath("/admin/customers", "layout");
+  return { ok: true };
+}
+
+export type CustomerFlags = { id: string; name: string; isBlocked: boolean; blockedReason: string | null; noShowCount: number };
+
+// Flags for the customer with this phone, for the warning on the new-order form. Null when
+// there is no such customer or nothing to warn about.
+export async function customerFlagsAction(phone: string): Promise<CustomerFlags | null> {
+  await assertRole(["admin", "counter"]);
+  // Same normalisation as create_order.
+  const normalised = phone.replace(/[\s()-]/g, "");
+  if (!/^\+?[0-9]{10,15}$/.test(normalised)) return null;
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("customers")
+    .select("id, full_name, is_blocked, blocked_reason, no_show_count")
+    .eq("phone", normalised)
+    .maybeSingle();
+  if (!data || (!data.is_blocked && data.no_show_count === 0)) return null;
+  return { id: data.id, name: data.full_name, isBlocked: data.is_blocked, blockedReason: data.blocked_reason, noShowCount: data.no_show_count };
+}
+
 // Window and category usage for one business-local day ("YYYY-MM-DD"). Null when it cannot be loaded.
 export async function pickupAvailabilityAction(dayKey: string, excludeOrderId?: string): Promise<PickupAvailability | null> {
   await assertRole(["admin", "counter"]);

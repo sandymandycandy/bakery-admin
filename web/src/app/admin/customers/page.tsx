@@ -49,7 +49,9 @@ export default async function CustomersPage({ searchParams }: PageProps<"/admin/
                 const latest = [...c.orders].sort((a, b) => (b.due_at ?? "").localeCompare(a.due_at ?? ""))[0];
                 return (
                   <tr key={c.id}>
-                    <td className="px-4 py-3 font-medium">{c.full_name}</td>
+                    <td className="px-4 py-3 font-medium">
+                      <Link href={`/admin/customers/${c.id}`} className="hover:text-brand hover:underline">{c.full_name}</Link>
+                    </td>
                     <td className="px-4 py-3"><a href={`tel:${c.phone}`} className="text-brand hover:underline">{c.phone}</a></td>
                     <td className="px-4 py-3">{c.orders.length}</td>
                     <td className="px-4 py-3">

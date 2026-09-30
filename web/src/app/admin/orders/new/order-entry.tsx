@@ -7,6 +7,7 @@ import { SourceBadge } from "@/components/order-badges";
 import { formatLeadTime, formatPaise } from "@/lib/money";
 import { OverridePrompt } from "@/components/override-prompt";
 import { PickupWindows } from "@/components/pickup-windows";
+import { CustomerWarning } from "@/components/customer-warning";
 import { createOrderAction } from "../actions";
 
 export type CatalogueProduct = {
@@ -247,6 +248,7 @@ export function OrderEntry({
               <Input id="cphone" type="tel" inputMode="tel" value={customerPhone} onChange={(e) => { setError(null); setCustomerPhone(e.target.value); }} autoComplete="off" />
             </Field>
           </div>
+          <CustomerWarning phone={customerPhone} />
           <Field label="Customer notes" htmlFor="cnotes">
             <Textarea id="cnotes" value={customerNotes} onChange={(e) => setCustomerNotes(e.target.value)} maxLength={1000} className="min-h-14" />
           </Field>
