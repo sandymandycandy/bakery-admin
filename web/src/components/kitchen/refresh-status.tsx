@@ -3,12 +3,22 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatTime } from "@/lib/time";
-import { kitchenStampAction } from "@/app/kitchen/actions";
+import { KITCHEN_OFFLINE_EVENT, createStampPoller } from "@/lib/kitchen";
 
 const POLL_MS = 10_000;
+const POLL_TIMEOUT_MS = 8_000;
+
+async function fetchStamp(signal: AbortSignal): Promise<string> {
+  const res = await fetch("/kitchen/stamp", { signal, cache: "no-store" });
+  if (!res.ok) throw new Error(`stamp ${res.status}`);
+  const body = (await res.json()) as { stamp?: string };
+  if (typeof body.stamp !== "string") throw new Error("stamp missing");
+  return body.stamp;
+}
 
 // Checks for ticket changes every 10 seconds while the tab is visible, and reloads the page data
-// only when something changed. A failed check shows the Offline banner until the next success.
+// only when something changed. A failed or timed-out check, or a ticket action that failed on the
+// network, shows the Offline banner until the next successful check.
 export function RefreshStatus({ stamp, tz, loadedAt }: { stamp: string; tz: string; loadedAt: string }) {
   const router = useRouter();
   const known = useRef(stamp);
@@ -22,31 +32,38 @@ export function RefreshStatus({ stamp, tz, loadedAt }: { stamp: string; tz: stri
 
   useEffect(() => {
     let live = true;
+    const pollStamp = createStampPoller(fetchStamp, { timeoutMs: POLL_TIMEOUT_MS });
     async function poll() {
       if (document.visibilityState !== "visible") return;
-      try {
-        const next = await kitchenStampAction();
-        if (!live) return;
-        const at = Date.now();
-        setOffline(false);
-        setLastOk(at);
-        setNow(at);
-        if (next !== known.current) {
-          known.current = next;
-          router.refresh();
-        }
-      } catch {
-        if (live) setOffline(true);
+      const result = await pollStamp();
+      if (!live || result.kind === "busy") return;
+      if (result.kind === "offline") {
+        setOffline(true);
+        return;
       }
+      const at = Date.now();
+      setOffline(false);
+      setLastOk(at);
+      setNow(at);
+      if (result.stamp !== known.current) {
+        known.current = result.stamp;
+        router.refresh();
+      }
+    }
+    function onActionOffline() {
+      setOffline(true);
+      void poll();
     }
     const timer = setInterval(poll, POLL_MS);
     const clock = setInterval(() => setNow(Date.now()), 5_000);
     document.addEventListener("visibilitychange", poll);
+    window.addEventListener(KITCHEN_OFFLINE_EVENT, onActionOffline);
     return () => {
       live = false;
       clearInterval(timer);
       clearInterval(clock);
       document.removeEventListener("visibilitychange", poll);
+      window.removeEventListener(KITCHEN_OFFLINE_EVENT, onActionOffline);
     };
   }, [router]);
 

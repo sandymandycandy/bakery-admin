@@ -8,6 +8,8 @@ import { SourceBadge } from "@/components/order-badges";
 import { formatDateTime, formatTime } from "@/lib/time";
 import {
   ADMIN_KITCHEN_REASON_MIN,
+  KITCHEN_OFFLINE_EVENT,
+  actionFollowUp,
   issueKindLabel,
   ticketStatusLabel,
   ticketStatusTone,
@@ -30,7 +32,8 @@ export type TicketMode = "chef" | "admin" | "view";
 type Outcome = { ok?: boolean; message?: string };
 
 // Runs a ticket action. A thrown error means the request never reached the server, so nothing was
-// saved; the page data is refreshed either way so the card shows what the server has.
+// saved: tell the header (it shows Offline) and do not refresh, because a refresh on a dropped
+// connection reloads the whole page into the browser's offline screen.
 function useTicketAction() {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -38,14 +41,17 @@ function useTicketAction() {
   function run(action: () => Promise<Outcome>, onDone?: () => void) {
     setError(null);
     start(async () => {
+      let result: Outcome | "network-error";
       try {
-        const result = await action();
-        if (result.ok) onDone?.();
-        else setError(result.message ?? "Could not save.");
+        result = await action();
       } catch {
-        setError("Not saved, check the connection.");
+        result = "network-error";
       }
-      router.refresh();
+      const next = actionFollowUp(result);
+      setError(next.message);
+      if (result !== "network-error" && result.ok) onDone?.();
+      if (next.offline) window.dispatchEvent(new Event(KITCHEN_OFFLINE_EVENT));
+      if (next.refresh) router.refresh();
     });
   }
   return { pending, error, run };
@@ -354,6 +360,7 @@ export function PrintTicketButton({ ticketId }: { ticketId: string }) {
             } catch {
               win?.close();
               setError("Not saved, check the connection.");
+              window.dispatchEvent(new Event(KITCHEN_OFFLINE_EVENT));
             }
           });
         }}

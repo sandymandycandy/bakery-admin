@@ -5,7 +5,6 @@ import { z } from "zod";
 import { assertRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { rpcError, type RpcFailure } from "@/lib/orders";
-import { ticketStamp } from "@/lib/kitchen-data";
 
 type Result<T = object> = ({ ok: true } & T) | ({ ok?: false } & RpcFailure);
 
@@ -16,11 +15,6 @@ const reasonArg = (reason?: string) => reason?.trim().slice(0, 300) || undefined
 function afterTicketChange() {
   revalidatePath("/kitchen");
   revalidatePath("/admin", "layout");
-}
-
-export async function kitchenStampAction(): Promise<string> {
-  await assertRole(["chef", "admin", "counter"]);
-  return ticketStamp(await createClient());
 }
 
 export async function acknowledgeTicketAction(ticketId: string, reason?: string): Promise<Result> {

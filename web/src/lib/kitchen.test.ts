@@ -50,3 +50,36 @@ test("within a group, earlier start-by first, then earlier pickup", () => {
   );
   assert.deepEqual(groups[0].tickets.map((t) => t.id), ["a", "c", "b"]);
 });
+
+import { actionFollowUp, createStampPoller } from "./kitchen.ts";
+
+test("a server answer refreshes the page and keeps the screen online", () => {
+  assert.deepEqual(actionFollowUp({ ok: true }), { refresh: true, offline: false, message: null });
+  assert.deepEqual(actionFollowUp({ message: "This ticket was cancelled." }), {
+    refresh: true,
+    offline: false,
+    message: "This ticket was cancelled.",
+  });
+});
+
+test("a network failure does not refresh (that would reload into the browser's offline page) and marks the screen offline", () => {
+  assert.deepEqual(actionFollowUp("network-error"), {
+    refresh: false,
+    offline: true,
+    message: "Not saved, check the connection.",
+  });
+});
+
+test("the stamp poller times out a hung request instead of waiting forever", async () => {
+  const poll = createStampPoller(() => new Promise<string>(() => {}), { timeoutMs: 20 });
+  assert.deepEqual(await poll(), { kind: "offline" });
+});
+
+test("the stamp poller skips a poll while the previous one is still running", async () => {
+  let release: (s: string) => void = () => {};
+  const poll = createStampPoller(() => new Promise<string>((r) => { release = r; }), { timeoutMs: 1000 });
+  const first = poll();
+  assert.deepEqual(await poll(), { kind: "busy" });
+  release("3:2026-10-03T10:00:00Z");
+  assert.deepEqual(await first, { kind: "ok", stamp: "3:2026-10-03T10:00:00Z" });
+});

@@ -109,3 +109,46 @@ export function groupQueue<T extends { due_at: string; start_by: string }>(
   }
   return groups.filter((g) => g.tickets.length > 0);
 }
+
+// Fired by a ticket card whose action failed on the network; the refresh indicator listens.
+export const KITCHEN_OFFLINE_EVENT = "kitchen:offline";
+
+export type ActionFollowUp = { refresh: boolean; offline: boolean; message: string | null };
+
+// What a ticket card does after an action. Only refresh when the server answered: in Next 16 a
+// refresh that fails on a dropped connection falls back to a full page load, which replaces the
+// kitchen screen with the browser's offline page.
+export function actionFollowUp(result: { ok?: boolean; message?: string } | "network-error"): ActionFollowUp {
+  if (result === "network-error") return { refresh: false, offline: true, message: "Not saved, check the connection." };
+  return { refresh: true, offline: false, message: result.ok ? null : (result.message ?? "Could not save.") };
+}
+
+export type PollResult = { kind: "ok"; stamp: string } | { kind: "offline" } | { kind: "busy" };
+
+// Wraps the change-stamp request: at most one in flight (a slow network must not pile requests
+// up), and a hung request counts as offline after timeoutMs.
+export function createStampPoller(fetchStamp: (signal: AbortSignal) => Promise<string>, opts: { timeoutMs: number }) {
+  let inFlight = false;
+  return async function poll(): Promise<PollResult> {
+    if (inFlight) return { kind: "busy" };
+    inFlight = true;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const timeout = new Promise<PollResult>((resolve) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          resolve({ kind: "offline" });
+        }, opts.timeoutMs);
+      });
+      const request = fetchStamp(controller.signal).then(
+        (stamp): PollResult => ({ kind: "ok", stamp }),
+        (): PollResult => ({ kind: "offline" }),
+      );
+      return await Promise.race([request, timeout]);
+    } finally {
+      clearTimeout(timer);
+      inFlight = false;
+    }
+  };
+}
