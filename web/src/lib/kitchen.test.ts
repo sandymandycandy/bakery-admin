@@ -51,7 +51,7 @@ test("within a group, earlier start-by first, then earlier pickup", () => {
   assert.deepEqual(groups[0].tickets.map((t) => t.id), ["a", "c", "b"]);
 });
 
-import { actionFollowUp, createStampPoller } from "./kitchen.ts";
+import { StampSignedOutError, actionFollowUp, createStampPoller, readStampResponse } from "./kitchen.ts";
 
 test("a server answer refreshes the page and keeps the screen online", () => {
   assert.deepEqual(actionFollowUp({ ok: true }), { refresh: true, offline: false, message: null });
@@ -82,4 +82,57 @@ test("the stamp poller skips a poll while the previous one is still running", as
   assert.deepEqual(await poll(), { kind: "busy" });
   release("3:2026-10-03T10:00:00Z");
   assert.deepEqual(await first, { kind: "ok", stamp: "3:2026-10-03T10:00:00Z" });
+});
+
+const stampResponse = (over: Partial<Parameters<typeof readStampResponse>[0]> = {}) => ({
+  status: 200,
+  ok: true,
+  redirected: false,
+  url: "https://bakery.test/kitchen/stamp",
+  json: async (): Promise<unknown> => ({ stamp: "3:2026-10-03T10:00:00Z" }),
+  ...over,
+});
+const notSignedOut = (e: unknown) => !(e instanceof StampSignedOutError);
+
+test("a good stamp response gives the stamp", async () => {
+  assert.equal(await readStampResponse(stampResponse()), "3:2026-10-03T10:00:00Z");
+});
+
+test("a 401 (deactivated chef) means signed out, not offline", async () => {
+  await assert.rejects(readStampResponse(stampResponse({ status: 401, ok: false })), StampSignedOutError);
+});
+
+test("a redirect to /login (the proxy found no session) means signed out, even though the page answers 200", async () => {
+  const res = stampResponse({
+    redirected: true,
+    url: "https://bakery.test/login?next=%2Fkitchen%2Fstamp",
+    json: async () => {
+      throw new SyntaxError("Unexpected token '<'");
+    },
+  });
+  await assert.rejects(readStampResponse(res), StampSignedOutError);
+});
+
+test("a server error or a malformed body is an ordinary failure, not a sign-out", async () => {
+  await assert.rejects(readStampResponse(stampResponse({ status: 503, ok: false })), notSignedOut);
+  await assert.rejects(readStampResponse(stampResponse({ json: async () => ({}) })), notSignedOut);
+  // A redirect somewhere other than /login is not a sign-out either.
+  await assert.rejects(
+    readStampResponse(stampResponse({ redirected: true, url: "https://bakery.test/elsewhere", json: async () => ({}) })),
+    notSignedOut,
+  );
+});
+
+test("the stamp poller reports a lost session as signed out instead of offline", async () => {
+  const poll = createStampPoller(async () => {
+    throw new StampSignedOutError();
+  }, { timeoutMs: 1000 });
+  assert.deepEqual(await poll(), { kind: "signed_out" });
+});
+
+test("any other failure from the stamp request is offline", async () => {
+  const poll = createStampPoller(async () => {
+    throw new Error("network down");
+  }, { timeoutMs: 1000 });
+  assert.deepEqual(await poll(), { kind: "offline" });
 });

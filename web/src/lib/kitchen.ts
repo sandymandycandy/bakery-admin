@@ -123,10 +123,30 @@ export function actionFollowUp(result: { ok?: boolean; message?: string } | "net
   return { refresh: true, offline: false, message: result.ok ? null : (result.message ?? "Could not save.") };
 }
 
-export type PollResult = { kind: "ok"; stamp: string } | { kind: "offline" } | { kind: "busy" };
+// The chef's session is gone (signed out, expired, or the account was deactivated).
+export class StampSignedOutError extends Error {
+  constructor() {
+    super("signed out");
+    this.name = "StampSignedOutError";
+  }
+}
+
+// Turns the answer of GET /kitchen/stamp into the stamp. A lost or deactivated session is a 401 from
+// the route, or a redirect to /login from the proxy before the route runs (fetch follows it and gets
+// the sign-in page). Both mean "sign in again", not "offline".
+export async function readStampResponse(res: Pick<Response, "status" | "ok" | "redirected" | "url" | "json">): Promise<string> {
+  if (res.status === 401 || (res.redirected && new URL(res.url).pathname === "/login")) throw new StampSignedOutError();
+  if (!res.ok) throw new Error(`stamp ${res.status}`);
+  const body = (await res.json()) as { stamp?: unknown };
+  if (typeof body.stamp !== "string") throw new Error("stamp missing");
+  return body.stamp;
+}
+
+export type PollResult = { kind: "ok"; stamp: string } | { kind: "offline" } | { kind: "signed_out" } | { kind: "busy" };
 
 // Wraps the change-stamp request: at most one in flight (a slow network must not pile requests
-// up), and a hung request counts as offline after timeoutMs.
+// up), a hung request counts as offline after timeoutMs, and a lost session is reported as
+// signed out so the screen can send the chef to /login instead of showing Offline forever.
 export function createStampPoller(fetchStamp: (signal: AbortSignal) => Promise<string>, opts: { timeoutMs: number }) {
   let inFlight = false;
   return async function poll(): Promise<PollResult> {
@@ -143,7 +163,7 @@ export function createStampPoller(fetchStamp: (signal: AbortSignal) => Promise<s
       });
       const request = fetchStamp(controller.signal).then(
         (stamp): PollResult => ({ kind: "ok", stamp }),
-        (): PollResult => ({ kind: "offline" }),
+        (error: unknown): PollResult => (error instanceof StampSignedOutError ? { kind: "signed_out" } : { kind: "offline" }),
       );
       return await Promise.race([request, timeout]);
     } finally {

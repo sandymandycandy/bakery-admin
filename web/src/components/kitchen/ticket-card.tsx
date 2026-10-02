@@ -172,6 +172,7 @@ export function TicketCard({
                   className="flex items-center gap-2"
                   onSubmit={(e) => {
                     e.preventDefault();
+                    if (!canAct) return;
                     run(() => setLineReadyAction(l.id, Number(partCount), adminReason), () => setPartLine(null));
                   }}
                 >
@@ -186,7 +187,7 @@ export function TicketCard({
                     onChange={(e) => setPartCount(e.target.value.replace(/\D/g, ""))}
                   />
                   <span className="text-sm text-muted">of {l.quantity}</span>
-                  <Button type="submit" variant="secondary" disabled={pending || partCount === ""}>
+                  <Button type="submit" variant="secondary" disabled={pending || !canAct || partCount === ""}>
                     Save
                   </Button>
                 </form>
@@ -208,27 +209,27 @@ export function TicketCard({
         </Alert>
       )}
 
-      {open && (
-        <footer className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
-          {mode !== "view" && ticket.status === "new" && (
-            <Button variant="secondary" className="py-3" disabled={pending || !canAct}
-              onClick={() => run(() => acknowledgeTicketAction(ticket.id, adminReason))}>
-              Acknowledge
-            </Button>
-          )}
-          {mode !== "view" && (ticket.status === "new" || ticket.status === "acknowledged") && (
-            <Button className="py-3" disabled={pending || !canAct} onClick={() => run(() => startTicketAction(ticket.id, adminReason))}>
-              Start
-            </Button>
-          )}
-          {mode !== "view" && working && (
-            <Button variant="secondary" className="py-3" onClick={() => setReporting(!reporting)}>
-              Report issue
-            </Button>
-          )}
-          <PrintTicketButton ticketId={ticket.id} />
-        </footer>
-      )}
+      {/* Every ticket can be printed, cancelled ones too (the print says CANCELLED · DO NOT MAKE).
+          The action buttons below only match tickets that are still open. */}
+      <footer className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+        {mode !== "view" && ticket.status === "new" && (
+          <Button variant="secondary" className="py-3" disabled={pending || !canAct}
+            onClick={() => run(() => acknowledgeTicketAction(ticket.id, adminReason))}>
+            Acknowledge
+          </Button>
+        )}
+        {mode !== "view" && (ticket.status === "new" || ticket.status === "acknowledged") && (
+          <Button className="py-3" disabled={pending || !canAct} onClick={() => run(() => startTicketAction(ticket.id, adminReason))}>
+            Start
+          </Button>
+        )}
+        {mode !== "view" && working && (
+          <Button variant="secondary" className="py-3" onClick={() => setReporting(!reporting)}>
+            Report issue
+          </Button>
+        )}
+        <PrintTicketButton ticketId={ticket.id} />
+      </footer>
       {reporting && <IssueForm ticket={ticket} onDone={() => setReporting(false)} />}
       {error && (
         <p role="alert" className="mt-2 text-sm font-medium text-danger">

@@ -33,9 +33,13 @@ export default async function KotPage({ searchParams }: PageProps<"/admin/kot">)
   const source = str(params.source) === "in_store" || str(params.source) === "online_call" ? str(params.source) : "";
   const status = STATUSES.find((s) => s === str(params.status)) ?? "open";
   const { start, end } = zonedDayRange(day, tz);
+  // "Open" on today also lists open tickets from earlier days: they are overdue and still need
+  // attention, like the chef screen's Today group. Any other day or status shows just that day.
+  const includeEarlier = status === "open" && day === today;
 
   const supabase = await createClient();
-  let query = ticketsQuery(supabase).gte("due_at", start.toISOString()).lt("due_at", end.toISOString()).order("due_at");
+  let query = ticketsQuery(supabase).lt("due_at", end.toISOString()).order("due_at");
+  if (!includeEarlier) query = query.gte("due_at", start.toISOString());
   if (kitchen) query = query.eq("kitchen_id", kitchen);
   if (source === "in_store") query = query.eq("source", "IN_STORE");
   if (source === "online_call") query = query.in("source", ["ONLINE", "CALL"]);
@@ -130,6 +134,9 @@ export default async function KotPage({ searchParams }: PageProps<"/admin/kot">)
           </div>
           <Button type="submit" variant="secondary">Show</Button>
         </form>
+        {includeEarlier && (
+          <p className="-mt-3 text-sm text-muted">Open tickets still not ready from earlier days are included, earliest first.</p>
+        )}
 
         {error ? (
           <p role="alert" className="text-sm text-danger">Could not load tickets: {error.message}</p>

@@ -26,12 +26,18 @@ export function ResolveIssueForm({ issueId }: { issueId: string }) {
         e.preventDefault();
         setError(null);
         start(async () => {
-          const result = await resolveIssueAction(issueId, text);
-          if (result.ok) {
-            setOpen(false);
-            router.refresh();
-          } else {
-            setError(result.message ?? "Could not save.");
+          // A thrown error means the request never reached the server (or the session ended), so
+          // nothing was saved. Show it here instead of letting it reach the page's error boundary.
+          try {
+            const result = await resolveIssueAction(issueId, text);
+            if (result.ok) {
+              setOpen(false);
+              router.refresh();
+            } else {
+              setError(result.message ?? "Could not save.");
+            }
+          } catch {
+            setError("Not saved, check the connection.");
           }
         });
       }}
