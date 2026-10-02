@@ -98,6 +98,55 @@ type RpcReturnsOrder = {
   SetofOptions: { from: "*"; to: "orders"; isOneToOne: true; isSetofReturn: false }
 }
 
+type KitchenTicketRow = {
+  acknowledged_at: string | null
+  acknowledged_by: string | null
+  cancel_reason: string | null
+  cancelled_at: string | null
+  created_at: string
+  due_at: string
+  id: string
+  kitchen_id: string
+  order_id: string
+  print_count: number
+  ready_at: string | null
+  ready_by: string | null
+  reference: string
+  revised_at: string | null
+  revision: number
+  source: Database["public"]["Enums"]["order_source"]
+  start_by: string
+  started_at: string | null
+  started_by: string | null
+  status: Database["public"]["Enums"]["ticket_status"]
+  stop_work_acknowledged_at: string | null
+  stop_work_acknowledged_by: string | null
+  updated_at: string
+}
+
+type KitchenIssueRow = {
+  id: string
+  kind: string
+  line_id: string | null
+  note: string
+  reported_at: string
+  reported_by: string | null
+  resolution: string | null
+  resolved_at: string | null
+  resolved_by: string | null
+  ticket_id: string
+}
+
+type RpcReturnsTicket = {
+  Returns: KitchenTicketRow
+  SetofOptions: { from: "*"; to: "kitchen_tickets"; isOneToOne: true; isSetofReturn: false }
+}
+
+type RpcReturnsIssue = {
+  Returns: KitchenIssueRow
+  SetofOptions: { from: "*"; to: "kitchen_issues"; isOneToOne: true; isSetofReturn: false }
+}
+
 export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
@@ -433,6 +482,85 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      kitchen_issues: {
+        Row: KitchenIssueRow
+        Insert: never
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: "kitchen_issues_line_id_fkey"
+            columns: ["line_id"]
+            isOneToOne: false
+            referencedRelation: "kitchen_ticket_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kitchen_issues_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "kitchen_tickets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kitchen_ticket_lines: {
+        Row: {
+          allergens: string[]
+          contains_egg: boolean
+          id: string
+          is_eggless: boolean
+          is_veg: boolean
+          lead_time_minutes: number
+          line_no: number
+          notes: string | null
+          order_item_id: string | null
+          product_name: string
+          quantity: number
+          ready_quantity: number
+          status: Database["public"]["Enums"]["ticket_line_status"]
+          ticket_id: string
+          variant_name: string
+        }
+        Insert: never
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: "kitchen_ticket_lines_order_item_id_fkey"
+            columns: ["order_item_id"]
+            isOneToOne: true
+            referencedRelation: "order_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kitchen_ticket_lines_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "kitchen_tickets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kitchen_tickets: {
+        Row: KitchenTicketRow
+        Insert: never
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: "kitchen_tickets_kitchen_id_fkey"
+            columns: ["kitchen_id"]
+            isOneToOne: false
+            referencedRelation: "kitchens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kitchen_tickets_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       kitchens: {
         Row: {
@@ -783,6 +911,25 @@ export type Database = {
       }
     }
     Views: {
+      order_kitchen_progress: {
+        Row: {
+          all_ready: boolean | null
+          open_issues: number | null
+          order_id: string | null
+          ready_count: number | null
+          stop_work_pending: number | null
+          ticket_count: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kitchen_tickets_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_summaries: {
         Row: Nullable<OrderRow> & {
           balance_paise: number | null
@@ -815,6 +962,28 @@ export type Database = {
       }
     }
     Functions: {
+      acknowledge_stop_work: RpcReturnsTicket & {
+        Args: { p_reason?: string; p_ticket_id: string }
+      }
+      acknowledge_ticket: RpcReturnsTicket & {
+        Args: { p_reason?: string; p_ticket_id: string }
+      }
+      record_ticket_print: {
+        Args: { p_ticket_id: string }
+        Returns: number
+      }
+      report_issue: RpcReturnsIssue & {
+        Args: { p_kind: string; p_line_id?: string; p_note: string; p_ticket_id: string }
+      }
+      resolve_issue: RpcReturnsIssue & {
+        Args: { p_issue_id: string; p_resolution: string }
+      }
+      set_line_ready: RpcReturnsTicket & {
+        Args: { p_line_id: string; p_ready_quantity: number; p_reason?: string }
+      }
+      start_ticket: RpcReturnsTicket & {
+        Args: { p_reason?: string; p_ticket_id: string }
+      }
       apply_discount: RpcReturnsOrder & {
         Args: { p_expected_version: number; p_kind: string; p_order_id: string; p_reason?: string; p_value: number }
       }
@@ -934,6 +1103,8 @@ export type Database = {
       payment_method: "cash" | "upi" | "card" | "bank_transfer" | "other"
       prep_type: "made_to_order" | "ready_stock"
       staff_role: "admin" | "counter" | "chef"
+      ticket_line_status: "pending" | "preparing" | "ready" | "cancelled"
+      ticket_status: "new" | "acknowledged" | "preparing" | "ready" | "cancelled"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -972,6 +1143,8 @@ export const Constants = {
       payment_method: ["cash", "upi", "card", "bank_transfer", "other"],
       prep_type: ["made_to_order", "ready_stock"],
       staff_role: ["admin", "counter", "chef"],
+      ticket_line_status: ["pending", "preparing", "ready", "cancelled"],
+      ticket_status: ["new", "acknowledged", "preparing", "ready", "cancelled"],
     },
   },
 } as const
