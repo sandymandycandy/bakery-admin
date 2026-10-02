@@ -43,6 +43,7 @@ export function OrderActions({
   canConfirm,
   dueLocal,
   categoryIds,
+  kitchenLocked,
 }: {
   orderId: string;
   version: number;
@@ -51,6 +52,7 @@ export function OrderActions({
   canConfirm: boolean;
   dueLocal: string;
   categoryIds: string[];
+  kitchenLocked: boolean;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(null);
@@ -61,7 +63,7 @@ export function OrderActions({
 
   const awaiting = status === "draft" || status === "pending_confirmation";
   const open = !["completed", "rejected", "cancelled"].includes(status);
-  const reschedulable = awaiting || status === "confirmed";
+  const reschedulable = (awaiting || status === "confirmed") && !kitchenLocked;
 
   // Runs an action; on refusal keeps it so an admin can retry it with an override reason.
   function run(attempt: Attempt, overrideReason?: string) {

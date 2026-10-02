@@ -79,11 +79,17 @@ export default async function CalendarPage({ searchParams }: PageProps<"/admin/c
   const kitchenName = new Map((kitchens ?? []).map((k) => [k.id, k.name]));
   const closureByDay = new Map((closures ?? []).map((c) => [c.closed_on, c.reason]));
 
+  const orderIds = (orders ?? []).map((o) => o.id).filter((v): v is string => Boolean(v));
+  const { data: progress } = orderIds.length
+    ? await supabase.from("order_kitchen_progress").select("order_id, all_ready, open_issues").in("order_id", orderIds)
+    : { data: [] };
+  const progressById = new Map((progress ?? []).map((p) => [p.order_id, p]));
+
   const byDay: OrdersByDay = new Map();
   for (const o of orders ?? []) {
     if (!o.due_at) continue;
     const key = zonedDayKey(o.due_at, tz);
-    byDay.set(key, [...(byDay.get(key) ?? []), o]);
+    byDay.set(key, [...(byDay.get(key) ?? []), { ...o, kitchen: o.id ? progressById.get(o.id) : undefined }]);
   }
 
   const link = (overrides: Record<string, string>) => {

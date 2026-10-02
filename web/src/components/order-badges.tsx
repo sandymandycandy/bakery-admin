@@ -20,3 +20,16 @@ export function SourceBadge({ source }: { source: OrderSource }) {
     </span>
   );
 }
+
+export type KitchenProgress = { all_ready: boolean | null; open_issues: number | null };
+
+// Kitchen state from order_kitchen_progress. Ready itself is set by packing (Phase 5B).
+export function KitchenFlags({ progress }: { progress?: KitchenProgress }) {
+  if (!progress) return null;
+  return (
+    <>
+      {progress.all_ready && <Badge tone="ok">All kitchen items ready</Badge>}
+      {(progress.open_issues ?? 0) > 0 && <Badge tone="danger">Issue</Badge>}
+    </>
+  );
+}

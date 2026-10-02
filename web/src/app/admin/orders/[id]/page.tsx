@@ -9,11 +9,13 @@ import { formatPaise } from "@/lib/money";
 import { paymentMethodLabel, sourceLabel } from "@/lib/orders";
 import { dateToZonedLocal, formatDateTime } from "@/lib/time";
 import { Alert, Badge, Card, PageHeader, VegMark } from "@/components/ui";
-import { SourceBadge, StatusBadge } from "@/components/order-badges";
+import { KitchenFlags, SourceBadge, StatusBadge } from "@/components/order-badges";
 import { NoShowPanel, OrderActions, PaymentForm } from "./order-actions";
 import { BillPanel, DiscountForm } from "./billing-panel";
 import { EditItems } from "./edit-items";
 import { loadCatalogue } from "@/lib/catalogue";
+import { ticketsQuery, toKitchenTickets } from "@/lib/kitchen-data";
+import { StopWorkNotice, TicketCard } from "@/components/kitchen/ticket-card";
 
 export const metadata: Metadata = { title: "Order" };
 
@@ -32,6 +34,14 @@ const eventLabel: Record<string, string> = {
   bill_issued: "GST bill issued",
   credit_note_issued: "Credit note issued",
   completed: "Completed",
+  ticket_acknowledged: "Kitchen acknowledged",
+  ticket_started: "Kitchen started",
+  ticket_ready: "Kitchen ticket ready",
+  ready_count_corrected: "Ready count corrected",
+  kitchen_issue_reported: "Kitchen issue reported",
+  kitchen_issue_resolved: "Kitchen issue resolved",
+  stop_work_acknowledged: "Stop-work acknowledged",
+  tickets_revised: "Kitchen tickets revised",
   no_show_recorded: "No-show recorded",
   no_show_undone: "No-show undone",
 };
@@ -75,7 +85,13 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
     order.due_at !== null && new Date(order.due_at) <= new Date();
   const unmapped = (items ?? []).filter((i) => i.prep_type === "made_to_order" && !i.kitchen_id);
   // Items can change until kitchen work starts; confirmed orders only by an admin (update_order_items).
-  const canEditItems = !bill && (["draft", "pending_confirmation"].includes(order.status) || (order.status === "confirmed" && isAdmin));
+  const tickets = toKitchenTickets((await ticketsQuery(supabase).eq("order_id", id).order("reference")).data);
+  // Once any live ticket is past New, items and pickup time are locked until kitchen revisions (5C).
+  const kitchenLocked = tickets.some((t) => t.status !== "new" && t.status !== "cancelled");
+  const kitchenAllReady = tickets.some((t) => t.status !== "cancelled") && tickets.every((t) => t.status === "ready" || t.status === "cancelled");
+  const kitchenIssues = tickets.some((t) => t.issues.some((i) => !i.resolved_at));
+  const canEditItems =
+    !bill && !kitchenLocked && (["draft", "pending_confirmation"].includes(order.status) || (order.status === "confirmed" && isAdmin));
   const catalogue = canEditItems ? await loadCatalogue(supabase) : [];
 
   const itemList = (
@@ -119,6 +135,7 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
             <span>/</span>
             <SourceBadge source={order.source} />
             <StatusBadge status={order.status} />
+            <KitchenFlags progress={{ all_ready: kitchenAllReady, open_issues: kitchenIssues ? 1 : 0 }} />
           </span>
         }
       />
@@ -260,6 +277,7 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
                 isAdmin={isAdmin}
                 canConfirm={isAdmin || order.source === "IN_STORE"}
                 dueLocal={order.due_at ? dateToZonedLocal(new Date(order.due_at), tz) : ""}
+                kitchenLocked={kitchenLocked}
                 categoryIds={[...new Set((items ?? []).map((i) => i.category_id).filter((id): id is string => Boolean(id)))]}
               />
             </div>
@@ -319,6 +337,25 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
             />
           </Card>
 
+          {tickets.length > 0 && (
+            <Card className="lg:col-span-2">
+              <h2 className="mb-3 text-lg font-semibold">Kitchen</h2>
+              {kitchenLocked && !closed && (
+                <p className="mb-3 text-sm text-muted">
+                  The kitchen has acknowledged this order, so its items and pickup time can&apos;t be changed here. Cancel and recreate it if needed.
+                </p>
+              )}
+              <div className="grid gap-4 xl:grid-cols-2">
+                {tickets.map((t) =>
+                  t.status === "cancelled" && !t.stop_work_acknowledged_at ? (
+                    <StopWorkNotice key={t.id} ticket={t} tz={tz} mode={isAdmin ? "admin" : "view"} />
+                  ) : (
+                    <TicketCard key={t.id} ticket={t} tz={tz} mode={isAdmin ? "admin" : "view"} nowIso={new Date().toISOString()} />
+                  ),
+                )}
+              </div>
+            </Card>
+          )}
           <Card className="lg:col-span-2">
             <h2 className="mb-3 text-lg font-semibold">Timeline</h2>
             <ol className="flex flex-col gap-3 border-l-2 border-line pl-4 text-sm">
@@ -346,6 +383,18 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
                     )}
                     {typeof data.no_show_count === "number" && (
                       <p className="text-xs">Customer now has {data.no_show_count} no-show{data.no_show_count === 1 ? "" : "s"}</p>
+                    )}
+                    {typeof data.ticket === "string" && (
+                      <p className="font-mono text-xs">
+                        {data.ticket}
+                        {typeof data.kitchen === "string" && ` · ${data.kitchen}`}
+                      </p>
+                    )}
+                    {e.event_type === "ready_count_corrected" && typeof data.line === "string" && (
+                      <p className="text-xs">{data.line}: {String(data.from)} → {String(data.to)} ready</p>
+                    )}
+                    {typeof data.kind === "string" && typeof data.note === "string" && (
+                      <p className="text-xs">{data.kind}: {data.note}</p>
                     )}
                     {typeof data.amount_paise === "number" && <p className="text-xs">{formatPaise(data.amount_paise)}</p>}
                     {typeof data.bill_number === "string" && <p className="font-mono text-xs">{data.bill_number}</p>}

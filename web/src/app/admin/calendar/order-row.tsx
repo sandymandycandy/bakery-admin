@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { OrderSource, OrderStatus } from "@/lib/orders";
 import { formatTime } from "@/lib/time";
 import { cx } from "@/components/ui";
-import { SourceBadge, StatusBadge } from "@/components/order-badges";
+import { KitchenFlags, SourceBadge, StatusBadge, type KitchenProgress } from "@/components/order-badges";
 
 // Columns selected from order_summaries by the calendar page.
 export type CalendarOrder = {
@@ -14,6 +14,7 @@ export type CalendarOrder = {
   due_at: string | null;
   item_count: number | null;
   kitchen_ids: string[] | null;
+  kitchen?: KitchenProgress;
 };
 
 // Orders grouped by business-local day ("YYYY-MM-DD"), sorted by due time.
@@ -32,6 +33,7 @@ export function OrderList({ orders, tz, kitchenName }: { orders: CalendarOrder[]
             <span className="text-sm text-muted">{(o.kitchen_ids ?? []).map((k) => kitchenName.get(k)).filter(Boolean).join(" + ") || "No kitchen work"}</span>
             {o.source && <SourceBadge source={o.source} />}
             {o.status && <StatusBadge status={o.status} />}
+            <KitchenFlags progress={o.kitchen} />
           </Link>
         </li>
       ))}
