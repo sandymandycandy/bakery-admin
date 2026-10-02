@@ -13,7 +13,7 @@ const primary: NavItem[] = [
   { href: "/admin/products", label: "Products", roles: ["admin", "counter"] },
   { href: "/admin/orders", label: "Orders", roles: ["admin", "counter"] },
   { href: "/admin/calendar", label: "Calendar", roles: ["admin", "counter"] },
-  { href: "/admin/kot", label: "KOT", roles: ["admin"] },
+  { href: "/admin/kot", label: "KOT", roles: ["admin", "counter"] },
 ];
 
 const secondary: NavItem[] = [
