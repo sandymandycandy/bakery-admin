@@ -189,6 +189,135 @@ begin
     (select count(*) from public.kitchen_tickets where order_id = (select v::uuid from ctx where k = 'A'))::text);
 end $$;
 
+-- ===== Chef actions and issues (Task 3) =====
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000007f1","role":"authenticated"}', true);
+do $$
+declare
+  t public.kitchen_tickets; t2 public.kitchen_tickets; h text; n integer;
+  a1 uuid := (select v::uuid from ctx where k = 'A1');
+  a2 uuid := (select v::uuid from ctx where k = 'A2');
+  cake uuid := (select v::uuid from ctx where k = 'A1cake');
+begin
+  t := public.acknowledge_ticket(a1);
+  t2 := public.acknowledge_ticket(a1);
+  -- expect: acknowledged / true
+  insert into r(check_name,outcome) values ('C1 acknowledging twice changes nothing',
+    t2.status::text || ' / ' || (t2.acknowledged_at = t.acknowledged_at)::text);
+
+  begin perform public.start_ticket(a2);
+    insert into r(check_name,outcome) values ('C2 chef cannot act on another kitchen', 'ALLOWED');
+  -- expect: forbidden: This ticket belongs to a kitchen you are not assigned to.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('C2 chef cannot act on another kitchen', h || ': ' || sqlerrm); end;
+
+  t := public.set_line_ready(cake, 1);
+  -- expect: preparing / preparing
+  insert into r(check_name,outcome) values ('C3 part ready starts the ticket',
+    (select status::text from public.kitchen_ticket_lines where id = cake) || ' / ' || t.status);
+  t := public.set_line_ready(cake, 2);
+  -- expect: ready / ready
+  insert into r(check_name,outcome) values ('C4 full count makes line and ticket ready',
+    (select status::text from public.kitchen_ticket_lines where id = cake) || ' / ' || t.status);
+  t := public.set_line_ready(cake, 1);
+  -- expect: preparing / preparing / null
+  insert into r(check_name,outcome) values ('C5 lowering the count drops back to preparing',
+    (select status::text from public.kitchen_ticket_lines where id = cake) || ' / ' || t.status || ' / ' || coalesce(t.ready_at::text, 'null'));
+
+  begin perform public.set_line_ready(cake, 5);
+    insert into r(check_name,outcome) values ('C6 ready count above the quantity refused', 'ALLOWED');
+  -- expect: validation: Enter a ready count from 0 to 2.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('C6 ready count above the quantity refused', h || ': ' || sqlerrm); end;
+  t2 := public.set_line_ready(cake, 1);
+  -- expect: true
+  insert into r(check_name,outcome) values ('C6b same count again changes nothing', (t2.updated_at = t.updated_at)::text);
+
+  perform public.report_issue(a1, 'ingredient', ' Out of cream ', cake);
+  begin perform public.report_issue(a1, 'other', 'x');
+    insert into r(check_name,outcome) values ('C7 issue note too short', 'ALLOWED');
+  -- expect: validation: Describe the issue in at least 3 characters.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('C7 issue note too short', h || ': ' || sqlerrm); end;
+  begin perform public.resolve_issue((select id from public.kitchen_issues where ticket_id = a1), 'Fixed it');
+    insert into r(check_name,outcome) values ('C8 chef cannot resolve issues', 'ALLOWED');
+  -- expect: forbidden: Only an admin can resolve kitchen issues.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('C8 chef cannot resolve issues', h || ': ' || sqlerrm); end;
+
+  n := public.record_ticket_print(a1);
+  n := public.record_ticket_print(a1);
+  -- expect: 2
+  insert into r(check_name,outcome) values ('C9 prints are counted', n::text);
+  begin perform public.record_ticket_print(a2);
+    insert into r(check_name,outcome) values ('C10 chef cannot print another kitchen''s ticket', 'ALLOWED');
+  -- expect: forbidden: This ticket belongs to a kitchen you are not assigned to.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('C10 chef cannot print another kitchen''s ticket', h || ': ' || sqlerrm); end;
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000007f2","role":"authenticated"}', true);
+do $$
+declare t public.kitchen_tickets;
+begin
+  t := public.set_line_ready((select v::uuid from ctx where k = 'A2bread'), 3);
+  -- expect: ready
+  insert into r(check_name,outcome) values ('C11 chef two finishes kitchen two in one tap', t.status::text);
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000007c1","role":"authenticated"}', true);
+do $$
+declare h text; a1 uuid := (select v::uuid from ctx where k = 'A1');
+begin
+  begin perform public.start_ticket(a1);
+    insert into r(check_name,outcome) values ('C12 counter staff cannot act on tickets', 'ALLOWED');
+  -- expect: forbidden: Only the kitchen can update tickets.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('C12 counter staff cannot act on tickets', h || ': ' || sqlerrm); end;
+  begin perform public.report_issue(a1, 'other', 'Counter note');
+    insert into r(check_name,outcome) values ('C13 counter staff cannot report issues', 'ALLOWED');
+  -- expect: forbidden: Only the kitchen can update tickets.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('C13 counter staff cannot report issues', h || ': ' || sqlerrm); end;
+  -- expect: false / 1
+  insert into r(check_name,outcome) values ('C14 progress while kitchen one is short',
+    (select all_ready || ' / ' || open_issues from public.order_kitchen_progress where order_id = (select v::uuid from ctx where k = 'A')));
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000007f1","role":"authenticated"}', true);
+do $$
+begin
+  perform public.set_line_ready((select v::uuid from ctx where k = 'A1cake'), 2);
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000007a1","role":"authenticated"}', true);
+do $$
+declare h text; a uuid := (select v::uuid from ctx where k = 'A'); a2 uuid := (select v::uuid from ctx where k = 'A2');
+begin
+  -- expect: true / preparing v3 / 1
+  insert into r(check_name,outcome) values ('C15 all kitchens ready; order stays preparing',
+    (select all_ready::text from public.order_kitchen_progress where order_id = a)
+    || ' / ' || (select status || ' v' || version from public.orders where id = a)
+    || ' / ' || (select count(*) from public.order_events where order_id = a and event_type = 'ready_count_corrected'));
+  begin perform public.acknowledge_ticket(a2, 'ok');
+    insert into r(check_name,outcome) values ('C16 admin exception needs a reason', 'ALLOWED');
+  -- expect: forbidden: Give a reason of at least 5 characters for acting on a kitchen ticket.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('C16 admin exception needs a reason', h || ': ' || sqlerrm); end;
+  perform public.resolve_issue((select id from public.kitchen_issues where ticket_id = (select v::uuid from ctx where k = 'A1')), ' Bought more cream ');
+  -- expect: 0 / Bought more cream
+  insert into r(check_name,outcome) values ('C17 admin resolves the issue',
+    (select open_issues::text from public.order_kitchen_progress where order_id = a)
+    || ' / ' || (select resolution from public.kitchen_issues where ticket_id = (select v::uuid from ctx where k = 'A1')));
+  -- expect: kitchen_issue_reported, kitchen_issue_resolved, ready_count_corrected, ticket_acknowledged, ticket_ready, ticket_started
+  insert into r(check_name,outcome) values ('C18 kitchen events in the order timeline',
+    (select string_agg(distinct event_type, ', ' order by event_type) from public.order_events
+     where order_id = a and event_type not in ('created', 'confirmed')));
+  -- expect: B-990201-TK1 / T Kitchen One
+  insert into r(check_name,outcome) values ('C19 events name the ticket and kitchen',
+    (select data ->> 'ticket' || ' / ' || (data ->> 'kitchen') from public.order_events
+     where order_id = a and event_type = 'ticket_acknowledged'));
+end $$;
+
 reset role;
 select check_name, outcome from r order by n;
 rollback;

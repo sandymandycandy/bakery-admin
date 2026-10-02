@@ -332,3 +332,358 @@ begin
   return result;
 end;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Chef actions
+-- ---------------------------------------------------------------------------
+-- Chef actions take no version number: each states an end result, so a repeat or a double tap
+-- changes nothing. Any change to the order's status bumps the order version.
+
+create function private.lock_ticket(p_ticket_id uuid)
+returns public.kitchen_tickets
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  t public.kitchen_tickets;
+begin
+  select * into t from public.kitchen_tickets where id = p_ticket_id for update;
+  if not found then
+    perform private.fail('Ticket not found.', 'not_found');
+  end if;
+  return t;
+end;
+$$;
+
+-- 'chef' for a chef assigned to the kitchen; 'admin' for an admin acting as an exception with a
+-- reason (at least 5 characters). Refuses everyone else, including counter staff.
+create function private.ticket_actor(p_kitchen_id uuid, p_reason text)
+returns text
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  role public.staff_role := private.current_staff_role();
+  reason text := nullif(trim(coalesce(p_reason, '')), '');
+begin
+  if role = 'chef' then
+    if not exists (select 1 from public.staff_kitchens sk where sk.user_id = auth.uid() and sk.kitchen_id = p_kitchen_id) then
+      perform private.fail('This ticket belongs to a kitchen you are not assigned to.', 'forbidden');
+    end if;
+    return 'chef';
+  end if;
+  if role = 'admin' then
+    if reason is null or length(reason) < 5 then
+      perform private.fail('Give a reason of at least 5 characters for acting on a kitchen ticket.', 'forbidden');
+    end if;
+    return 'admin';
+  end if;
+  perform private.fail('Only the kitchen can update tickets.', 'forbidden');
+  return null;
+end;
+$$;
+
+-- Writes an order timeline entry naming the ticket and kitchen.
+create function private.log_ticket_event(t public.kitchen_tickets, p_type text, p_reason text default null, p_data jsonb default '{}')
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  select private.log_order_event(t.order_id, p_type, nullif(trim(coalesce(p_reason, '')), ''),
+    jsonb_build_object('ticket', t.reference, 'kitchen', (select k.name from public.kitchens k where k.id = t.kitchen_id))
+    || coalesce(p_data, '{}'))
+$$;
+
+-- Starts a locked ticket: acknowledges it if needed, moves pending lines to preparing, and moves a
+-- confirmed order to preparing.
+create function private.start_ticket_locked(t public.kitchen_tickets, p_reason text)
+returns public.kitchen_tickets
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  result public.kitchen_tickets;
+begin
+  update public.kitchen_tickets
+  set status = 'preparing',
+      acknowledged_at = coalesce(acknowledged_at, now()),
+      acknowledged_by = coalesce(acknowledged_by, auth.uid()),
+      started_at = now(),
+      started_by = auth.uid()
+  where id = t.id
+  returning * into result;
+  update public.kitchen_ticket_lines set status = 'preparing' where ticket_id = t.id and status = 'pending';
+  update public.orders set status = 'preparing', version = version + 1 where id = t.order_id and status = 'confirmed';
+  perform private.log_ticket_event(result, 'ticket_started', p_reason);
+  return result;
+end;
+$$;
+
+-- Derives the ticket's ready state from its lines. Always touches updated_at so the chef screen's
+-- change stamp moves.
+create function private.sync_ticket(p_ticket_id uuid)
+returns public.kitchen_tickets
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  t public.kitchen_tickets;
+  all_ready boolean;
+begin
+  select * into t from public.kitchen_tickets where id = p_ticket_id;
+  select coalesce(bool_and(status = 'ready'), false) into all_ready from public.kitchen_ticket_lines where ticket_id = t.id;
+  if all_ready and t.status <> 'ready' then
+    update public.kitchen_tickets set status = 'ready', ready_at = now(), ready_by = auth.uid()
+    where id = t.id returning * into t;
+    perform private.log_ticket_event(t, 'ticket_ready');
+  elsif not all_ready and t.status = 'ready' then
+    update public.kitchen_tickets set status = 'preparing', ready_at = null, ready_by = null
+    where id = t.id returning * into t;
+  else
+    update public.kitchen_tickets set updated_at = now() where id = t.id returning * into t;
+  end if;
+  return t;
+end;
+$$;
+
+create function public.acknowledge_ticket(p_ticket_id uuid, p_reason text default null)
+returns public.kitchen_tickets
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  t public.kitchen_tickets := private.lock_ticket(p_ticket_id);
+  actor text := private.ticket_actor(t.kitchen_id, p_reason);
+begin
+  if t.status = 'cancelled' then
+    perform private.fail('This ticket was cancelled. Stop work on it.');
+  end if;
+  if t.status <> 'new' then
+    return t;
+  end if;
+  update public.kitchen_tickets set status = 'acknowledged', acknowledged_at = now(), acknowledged_by = auth.uid()
+  where id = t.id returning * into t;
+  perform private.log_ticket_event(t, 'ticket_acknowledged', case when actor = 'admin' then p_reason end);
+  return t;
+end;
+$$;
+
+create function public.start_ticket(p_ticket_id uuid, p_reason text default null)
+returns public.kitchen_tickets
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  t public.kitchen_tickets := private.lock_ticket(p_ticket_id);
+  actor text := private.ticket_actor(t.kitchen_id, p_reason);
+begin
+  if t.status = 'cancelled' then
+    perform private.fail('This ticket was cancelled. Stop work on it.');
+  end if;
+  if t.status in ('preparing', 'ready') then
+    return t;
+  end if;
+  return private.start_ticket_locked(t, case when actor = 'admin' then p_reason end);
+end;
+$$;
+
+-- Sets how many of a line are ready (0..quantity). Starting is implied; lowering the count is a
+-- recorded correction.
+create function public.set_line_ready(p_line_id uuid, p_ready_quantity integer, p_reason text default null)
+returns public.kitchen_tickets
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  ln public.kitchen_ticket_lines;
+  t public.kitchen_tickets;
+  actor text;
+  admin_reason text;
+begin
+  select * into ln from public.kitchen_ticket_lines where id = p_line_id;
+  if not found then
+    perform private.fail('Ticket line not found.', 'not_found');
+  end if;
+  t := private.lock_ticket(ln.ticket_id);
+  actor := private.ticket_actor(t.kitchen_id, p_reason);
+  admin_reason := case when actor = 'admin' then p_reason end;
+  if t.status = 'cancelled' then
+    perform private.fail('This ticket was cancelled. Stop work on it.');
+  end if;
+  select * into ln from public.kitchen_ticket_lines where id = p_line_id for update;
+  if p_ready_quantity is null or p_ready_quantity < 0 or p_ready_quantity > ln.quantity then
+    perform private.fail(format('Enter a ready count from 0 to %s.', ln.quantity));
+  end if;
+  if p_ready_quantity = ln.ready_quantity then
+    return t;
+  end if;
+
+  if p_ready_quantity > 0 and t.status in ('new', 'acknowledged') then
+    t := private.start_ticket_locked(t, admin_reason);
+  end if;
+  update public.kitchen_ticket_lines
+  set ready_quantity = p_ready_quantity,
+      status = (case
+        when p_ready_quantity = quantity then 'ready'
+        when p_ready_quantity > 0 or t.status in ('preparing', 'ready') then 'preparing'
+        else 'pending' end)::public.ticket_line_status
+  where id = ln.id;
+  if p_ready_quantity < ln.ready_quantity then
+    perform private.log_ticket_event(t, 'ready_count_corrected', admin_reason,
+      jsonb_build_object('line', ln.product_name || ' — ' || ln.variant_name, 'from', ln.ready_quantity, 'to', p_ready_quantity));
+  end if;
+  return private.sync_ticket(t.id);
+end;
+$$;
+
+create function public.report_issue(p_ticket_id uuid, p_kind text, p_note text, p_line_id uuid default null)
+returns public.kitchen_issues
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  t public.kitchen_tickets := private.lock_ticket(p_ticket_id);
+  v_note text := trim(coalesce(p_note, ''));
+  i public.kitchen_issues;
+begin
+  -- Reporting is not an exception, so an admin needs no reason; chefs must be assigned; others are refused.
+  if private.current_staff_role() is distinct from 'admin' then
+    perform private.ticket_actor(t.kitchen_id, null);
+  end if;
+  if t.status = 'cancelled' then
+    perform private.fail('This ticket was cancelled. Stop work on it.');
+  end if;
+  if p_line_id is not null and not exists (select 1 from public.kitchen_ticket_lines where id = p_line_id and ticket_id = t.id) then
+    perform private.fail('That item is not on this ticket.');
+  end if;
+  if p_kind is null or p_kind not in ('ingredient', 'equipment', 'quality', 'other') then
+    perform private.fail('Choose what kind of issue this is.');
+  end if;
+  if length(v_note) < 3 then
+    perform private.fail('Describe the issue in at least 3 characters.');
+  end if;
+  if length(v_note) > 500 then
+    perform private.fail('Keep the note under 500 characters.');
+  end if;
+
+  insert into public.kitchen_issues (ticket_id, line_id, kind, note, reported_by)
+  values (t.id, p_line_id, p_kind, v_note, auth.uid())
+  returning * into i;
+  update public.kitchen_tickets set updated_at = now() where id = t.id;
+  perform private.log_ticket_event(t, 'kitchen_issue_reported', null, jsonb_build_object('kind', p_kind, 'note', v_note));
+  return i;
+end;
+$$;
+
+create function public.resolve_issue(p_issue_id uuid, p_resolution text)
+returns public.kitchen_issues
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_resolution text := trim(coalesce(p_resolution, ''));
+  i public.kitchen_issues;
+  t public.kitchen_tickets;
+begin
+  if not private.has_role(array['admin']::public.staff_role[]) then
+    perform private.fail('Only an admin can resolve kitchen issues.', 'forbidden');
+  end if;
+  if length(v_resolution) < 3 or length(v_resolution) > 500 then
+    perform private.fail('Describe how the issue was resolved (3 to 500 characters).');
+  end if;
+  select * into i from public.kitchen_issues where id = p_issue_id for update;
+  if not found then
+    perform private.fail('Issue not found.', 'not_found');
+  end if;
+  if i.resolved_at is not null then
+    perform private.fail('This issue is already resolved.');
+  end if;
+
+  update public.kitchen_issues
+  set resolved_at = now(), resolved_by = auth.uid(), resolution = v_resolution
+  where id = i.id
+  returning * into i;
+  update public.kitchen_tickets set updated_at = now() where id = i.ticket_id returning * into t;
+  perform private.log_ticket_event(t, 'kitchen_issue_resolved', v_resolution, jsonb_build_object('kind', i.kind, 'note', i.note));
+  return i;
+end;
+$$;
+
+create function public.acknowledge_stop_work(p_ticket_id uuid, p_reason text default null)
+returns public.kitchen_tickets
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  t public.kitchen_tickets := private.lock_ticket(p_ticket_id);
+  actor text := private.ticket_actor(t.kitchen_id, p_reason);
+begin
+  if t.status <> 'cancelled' then
+    perform private.fail('This ticket is not cancelled.');
+  end if;
+  if t.stop_work_acknowledged_at is not null then
+    return t;
+  end if;
+  update public.kitchen_tickets set stop_work_acknowledged_at = now(), stop_work_acknowledged_by = auth.uid()
+  where id = t.id returning * into t;
+  perform private.log_ticket_event(t, 'stop_work_acknowledged', case when actor = 'admin' then p_reason end);
+  return t;
+end;
+$$;
+
+-- Counts prints so reprints are labelled COPY. Chefs of the kitchen, admin, and counter may print.
+create function public.record_ticket_print(p_ticket_id uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  t public.kitchen_tickets := private.lock_ticket(p_ticket_id);
+  n integer;
+begin
+  if not private.has_role(array['admin', 'counter']::public.staff_role[]) then
+    perform private.ticket_actor(t.kitchen_id, null);
+  end if;
+  update public.kitchen_tickets set print_count = print_count + 1 where id = t.id returning print_count into n;
+  return n;
+end;
+$$;
+
+revoke execute on function
+  private.lock_ticket(uuid),
+  private.ticket_actor(uuid, text),
+  private.log_ticket_event(public.kitchen_tickets, text, text, jsonb),
+  private.start_ticket_locked(public.kitchen_tickets, text),
+  private.sync_ticket(uuid)
+  from public;
+revoke execute on function
+  public.acknowledge_ticket(uuid, text),
+  public.start_ticket(uuid, text),
+  public.set_line_ready(uuid, integer, text),
+  public.report_issue(uuid, text, text, uuid),
+  public.resolve_issue(uuid, text),
+  public.acknowledge_stop_work(uuid, text),
+  public.record_ticket_print(uuid)
+  from public, anon;
+grant execute on function
+  public.acknowledge_ticket(uuid, text),
+  public.start_ticket(uuid, text),
+  public.set_line_ready(uuid, integer, text),
+  public.report_issue(uuid, text, text, uuid),
+  public.resolve_issue(uuid, text),
+  public.acknowledge_stop_work(uuid, text),
+  public.record_ticket_print(uuid)
+  to authenticated;
