@@ -984,6 +984,10 @@ export type Database = {
       start_ticket: RpcReturnsTicket & {
         Args: { p_reason?: string; p_ticket_id: string }
       }
+      ticket_stamp: {
+        Args: never
+        Returns: string
+      }
       apply_discount: RpcReturnsOrder & {
         Args: { p_expected_version: number; p_kind: string; p_order_id: string; p_reason?: string; p_value: number }
       }

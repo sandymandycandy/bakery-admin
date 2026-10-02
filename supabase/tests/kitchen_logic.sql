@@ -87,6 +87,10 @@ select pg_temp.mk_line((select v::uuid from ctx where k = 'E'), 'cake', 1);
 select pg_temp.mk_line((select v::uuid from ctx where k = 'E'), 'bread', 1);
 select pg_temp.mk_line((select v::uuid from ctx where k = 'Q'), 'cake', 1);
 select private.recalc_order_totals(v::uuid) from ctx where k in ('A', 'P', 'E', 'Q');
+-- F: cake ×1 (review fixes, section F)
+insert into ctx values ('F', pg_temp.mk_order(990205, pg_temp.day(3))::text);
+select pg_temp.mk_line((select v::uuid from ctx where k = 'F'), 'cake', 1);
+select private.recalc_order_totals(v::uuid) from ctx where k = 'F';
 
 set local role authenticated;
 
@@ -432,6 +436,45 @@ begin
   -- expect: pending_confirmation / 0
   insert into r(check_name,outcome) values ('D12 pending orders have no tickets and edit as before',
     o.status::text || ' / ' || (select count(*) from public.kitchen_tickets where order_id = q));
+end $$;
+
+-- ===== Review fixes (2026-10-03) =====
+-- Within this one transaction every updated_at is the same now(), so the stamp checks rely on which
+-- tickets are counted, not on timestamps.
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000007a1","role":"authenticated"}', true);
+do $$
+declare
+  f uuid := (select v::uuid from ctx where k = 'F');
+  before text := public.ticket_stamp();
+  o public.orders;
+  t public.kitchen_tickets;
+  h text;
+begin
+  o := public.confirm_order(f, 1);
+  -- expect: true
+  insert into r(check_name,outcome) values ('F1 a new ticket changes the change stamp', (public.ticket_stamp() <> before)::text);
+  insert into ctx values ('admin_stamp_count', split_part(public.ticket_stamp(), ':', 1));
+  t := public.set_line_ready((select l.id from public.kitchen_ticket_lines l join public.kitchen_tickets kt on kt.id = l.ticket_id
+                              where kt.order_id = f), 1, 'Chef is off sick');
+  -- expect: ready / Chef is off sick
+  insert into r(check_name,outcome) values ('F2 an admin finishing a ticket records the reason on the ready entry',
+    t.status::text || ' / ' || coalesce((select reason from public.order_events where order_id = f and event_type = 'ticket_ready'), 'NULL'));
+  begin perform public.resolve_issue(gen_random_uuid(), 'Fixed it');
+    insert into r(check_name,outcome) values ('F3 resolving a missing issue', 'ALLOWED');
+  -- expect: not_found: Issue not found.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('F3 resolving a missing issue', h || ': ' || sqlerrm); end;
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000007f1","role":"authenticated"}', true);
+do $$
+declare n integer := split_part(public.ticket_stamp(), ':', 1)::integer;
+begin
+  -- expect: true / true
+  insert into r(check_name,outcome) values ('F4 a chef''s stamp counts only their kitchens'' tickets',
+    (n = (select count(*) from public.kitchen_tickets t
+          where t.status in ('new', 'acknowledged', 'preparing') or t.updated_at >= now() - interval '2 days'))::text
+    || ' / ' || (n < (select v::integer from ctx where k = 'admin_stamp_count'))::text);
 end $$;
 
 reset role;

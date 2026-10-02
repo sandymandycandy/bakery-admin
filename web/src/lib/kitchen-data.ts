@@ -24,14 +24,11 @@ export function toKitchenTickets(rows: TicketRows | null): KitchenTicket[] {
   }));
 }
 
-// Changes whenever any visible ticket changes: every ticket write touches updated_at. The chef
-// screen compares it every 10 seconds and reloads only when it differs.
+// Changes whenever any visible ticket that could be on screen changes: every ticket write touches
+// updated_at, and public.ticket_stamp() digests those values (row-level security limits a chef to
+// their kitchens). The chef screen compares it every 10 seconds and reloads only when it differs.
 export async function ticketStamp(supabase: Client): Promise<string> {
-  const { data, count, error } = await supabase
-    .from("kitchen_tickets")
-    .select("updated_at", { count: "exact" })
-    .order("updated_at", { ascending: false })
-    .limit(1);
+  const { data, error } = await supabase.rpc("ticket_stamp");
   if (error) throw new Error(error.message);
-  return `${count ?? 0}:${data?.[0]?.updated_at ?? ""}`;
+  return data;
 }
