@@ -74,7 +74,7 @@ create function pg_temp.mk_line(p_order uuid, p_key text, p_qty integer, p_notes
   returning id
 $$;
 
--- A: cake ×2 (Happy Birthday), bread ×3, puff ×1 · P: puff ×2 only · E: cake ×1, bread ×1 (edits) · Q: cake ×1 (stays pending)
+-- A: cake Ã—2 (Happy Birthday), bread Ã—3, puff Ã—1 Â· P: puff Ã—2 only Â· E: cake Ã—1, bread Ã—1 (edits) Â· Q: cake Ã—1 (stays pending)
 insert into ctx values ('A', pg_temp.mk_order(990201, pg_temp.day(3))::text);
 insert into ctx values ('P', pg_temp.mk_order(990202, pg_temp.day(3))::text);
 insert into ctx values ('E', pg_temp.mk_order(990203, pg_temp.day(3))::text);
@@ -118,6 +118,75 @@ begin
     || ' / ' || (select count(*) from public.kitchen_issues i join public.kitchen_tickets t on t.id = i.ticket_id
                  where t.order_id = (select v::uuid from ctx where k = 'A'))
     || ' / ' || (select count(*) from public.order_kitchen_progress where order_id = (select v::uuid from ctx where k = 'A')));
+end $$;
+
+-- ===== Ticket building (Task 2) =====
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000007a1","role":"authenticated"}', true);
+do $$
+declare
+  o public.orders;
+  a uuid := (select v::uuid from ctx where k = 'A');
+  p uuid := (select v::uuid from ctx where k = 'P');
+begin
+  o := public.confirm_order(a, 1);
+  -- expect: confirmed / B-990201-TK1, B-990201-TK2
+  insert into r(check_name,outcome) values ('B1 confirming creates one ticket per kitchen',
+    o.status::text || ' / ' || (select string_agg(reference, ', ' order by reference) from public.kitchen_tickets where order_id = a));
+  -- expect: B-990201-TK1: 2Ã—T Kt Cake (Happy Birthday) {milk} | B-990201-TK2: 3Ã—T Kt Bread {}
+  insert into r(check_name,outcome) values ('B2 lines per kitchen; ready-stock left out',
+    (select string_agg(t.reference || ': ' || l.quantity || 'Ã—' || l.product_name || coalesce(' (' || l.notes || ')', '') || ' ' || l.allergens::text,
+                       ' | ' order by t.reference)
+     from public.kitchen_tickets t join public.kitchen_ticket_lines l on l.ticket_id = t.id where t.order_id = a));
+  -- expect: true / true
+  insert into r(check_name,outcome) values ('B3 start by is pickup minus the longest lead time',
+    (select string_agg((start_by = due_at - make_interval(mins => case when reference like '%-TK1' then 120 else 60 end))::text, ' / ' order by reference)
+     from public.kitchen_tickets where order_id = a));
+  -- expect: new r1 null / new r1 null
+  insert into r(check_name,outcome) values ('B4 first build is revision 1, not revised',
+    (select string_agg(status || ' r' || revision || ' ' || coalesce(revised_at::text, 'null'), ' / ' order by reference)
+     from public.kitchen_tickets where order_id = a));
+  o := public.confirm_order(p, 1);
+  -- expect: confirmed / 0
+  insert into r(check_name,outcome) values ('B5 ready-stock-only order gets no ticket',
+    o.status::text || ' / ' || (select count(*) from public.kitchen_tickets where order_id = p));
+  -- expect: 2 / 0 / false / 0 / 0
+  insert into r(check_name,outcome) values ('B6 progress row',
+    (select ticket_count || ' / ' || ready_count || ' / ' || all_ready || ' / ' || open_issues || ' / ' || stop_work_pending
+     from public.order_kitchen_progress where order_id = a));
+
+  insert into ctx select 'A1', id::text from public.kitchen_tickets where order_id = a and reference like '%-TK1';
+  insert into ctx select 'A2', id::text from public.kitchen_tickets where order_id = a and reference like '%-TK2';
+  insert into ctx select 'A1cake', l.id::text from public.kitchen_ticket_lines l join public.kitchen_tickets t on t.id = l.ticket_id
+    where t.order_id = a and l.product_name = 'T Kt Cake';
+  insert into ctx select 'A2bread', l.id::text from public.kitchen_ticket_lines l join public.kitchen_tickets t on t.id = l.ticket_id
+    where t.order_id = a and l.product_name = 'T Kt Bread';
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000007f1","role":"authenticated"}', true);
+do $$
+begin
+  -- expect: B-990201-TK1 / 0
+  insert into r(check_name,outcome) values ('B7 chef one sees only kitchen one, and no orders',
+    (select string_agg(reference, ', ') from public.kitchen_tickets where order_id = (select v::uuid from ctx where k = 'A'))
+    || ' / ' || (select count(*) from public.orders));
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000007f2","role":"authenticated"}', true);
+do $$
+begin
+  -- expect: 2 / 2
+  insert into r(check_name,outcome) values ('B8 chef two sees both kitchens',
+    (select count(*) from public.kitchen_tickets where order_id = (select v::uuid from ctx where k = 'A'))::text
+    || ' / ' || (select count(*) from public.kitchen_ticket_lines l join public.kitchen_tickets t on t.id = l.ticket_id
+                 where t.order_id = (select v::uuid from ctx where k = 'A')));
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000007c1","role":"authenticated"}', true);
+do $$
+begin
+  -- expect: 2
+  insert into r(check_name,outcome) values ('B9 counter staff see every kitchen',
+    (select count(*) from public.kitchen_tickets where order_id = (select v::uuid from ctx where k = 'A'))::text);
 end $$;
 
 reset role;
