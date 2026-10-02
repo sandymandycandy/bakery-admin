@@ -1,6 +1,6 @@
 # Bakery Project — To-do List
 
-Status (2026-10-03): Phases 3, 4A and 4B are built and tested. Phase 4C is done except notification templates (waiting for the owner's channel decision). Everything up to item editing is on `main` and deployed (https://bakery-admin-ten.vercel.app). **Phase 5A (kitchen tickets) is built on branch `phase-5a-kitchen-tickets`; its database migration is live, the app is not merged or deployed yet.** No browser click-through yet. **Next: merge and deploy 5A, set up test data, click through every screen, then 5B (packing and handover).** Owner decision 2026-10-02: no stock or inventory tracking. See HANDOVER.md for setup, architecture, and known gaps.
+Status (2026-10-03): Phases 3, 4A and 4B are built and tested. Phase 4C is done except notification templates (waiting for the owner's channel decision). Everything up to item editing is on `main` and deployed (https://bakery-admin-ten.vercel.app). **Phase 5A (kitchen tickets) is built, reviewed and deployed (2026-10-03).** No browser click-through yet. **Next: set up test data, click through every screen, then 5B (packing and handover).** Owner decision 2026-10-02: no stock or inventory tracking. See HANDOVER.md for setup, architecture, and known gaps.
 Checkboxes represent actual completion, not intentions.
 
 ## Start here — next developer
@@ -11,7 +11,7 @@ Checkboxes represent actual completion, not intentions.
 4. [ ] Run the app locally and click through every admin screen in a browser (never done yet — only HTTP-level tests so far).
 5. [ ] Create a staging Supabase project so tests can create bills without consuming the live bill sequence.
 6. [ ] Enable Leaked Password Protection (Supabase → Auth → Password security).
-7. [ ] Merge `phase-5a-kitchen-tickets` into `main` and deploy (HANDOVER section 8).
+7. [x] Merge Phase 5A into `main` and deploy (done 2026-10-03).
 8. [ ] Decide about demo-login autofill on the live site (`DEMO_*` variables; not set yet). Remove them before real data goes in (HANDOVER section 2).
 9. [ ] Create the demo chef login (`npm run create-admin -- … --role chef`; needs the secret key) and assign it to kitchens; `/kitchen` needs it.
 10. [ ] While no real orders exist, reset the order sequence: `alter sequence public.order_number_seq restart with 1001` (test runs moved it to 1076).

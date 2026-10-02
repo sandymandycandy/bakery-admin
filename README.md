@@ -4,7 +4,7 @@
 
 Planning documents: [PRD.md](PRD.md), [TODO.md](TODO.md), [PROJECT_RULES.md](PROJECT_RULES.md).
 
-Status (2026-10-03): Phases 3, 4A and 4B are built (staff login, catalogue, orders, calendar, payments, counter sale, GST bills). Phase 4C is done except notification templates. Phase 5A (kitchen tickets, chef screen, KOT) is built on branch `phase-5a-kitchen-tickets`, not yet merged or deployed. Production: https://bakery-admin-ten.vercel.app. See [HANDOVER.md](HANDOVER.md).
+Status (2026-10-03): Phases 3, 4A and 4B are built (staff login, catalogue, orders, calendar, payments, counter sale, GST bills). Phase 4C is done except notification templates. Phase 5A (kitchen tickets, chef screen, KOT) is built and deployed. Production: https://bakery-admin-ten.vercel.app. See [HANDOVER.md](HANDOVER.md).
 
 `la pater/` is the original static prototype, kept as reference.
 

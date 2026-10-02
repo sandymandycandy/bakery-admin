@@ -11,7 +11,7 @@ Date: 2026-10-03 (first written 2026-09-27). Read this first, then [TODO.md](TOD
 | 4A Orders | **Done** | In-store and call orders, two order lists, order detail, confirm/reject/cancel/reschedule, payments and refunds, calendar, opening hours and closures, customers. |
 | 4B Billing | **Done** | Counter quick sale, discounts, GST bills (gap-free per financial year), credit notes, 80mm and A4 print. |
 | 4C | **Done except notifications** | Pickup windows, category caps, festival overrides, shared override prompt, calendar week/day views, demo-login autofill, customer blocking and no-shows (section 9), editing items on pending and confirmed orders (section 10). Left: notification templates (waiting for the owner to choose a channel). |
-| 5A Kitchen tickets | **Built, on branch `phase-5a-kitchen-tickets`** | Tickets per kitchen on confirmation, chef screen, ready counts, issues, stop-work, printed ticket, admin KOT page, kitchen badges (section 11). Database part is **live**; app part is **not merged or deployed yet**. |
+| 5A Kitchen tickets | **Done and deployed** (2026-10-03) | Tickets per kitchen on confirmation, chef screen, ready counts, issues, stop-work, printed ticket, admin KOT page, kitchen badges (section 11). Reviewed; review fixes deployed. |
 | 5B–5D | Not started | 5B packing and handover (orders reach Ready and Completed), 5C revisions after the kitchen has acknowledged, 5D chef PIN sign-in on tablets. |
 | 6 Public website | Not started | Deferred by the owner ("leave the public page for now"). |
 | 7–9 | Not started | Reports, rehearsal, launch, Release 1.1 exceptions. |
@@ -37,10 +37,9 @@ The database holds **no products, orders, or bills**. The only staff account is 
 | Demo-login autofill | `/login` pre-fills the demo logins while `DEMO_ADMIN_EMAIL`/`DEMO_ADMIN_PASSWORD` (and `DEMO_CHEF_*`) are set. **The owner chose to allow this in production.** Anyone who opens the site is then pre-filled as admin on the live database. **Not set anywhere yet.** Delete the variables and redeploy to turn it off; do so before real data goes in. |
 | Secret key | **Not configured.** Copy it from Supabase → Project Settings → API Keys into `web/.env.local` as `SUPABASE_SECRET_KEY`. Without it, Staff & Kitchens is read-only (no creating logins or resetting passwords). Never commit it. |
 | Publishable key and URL | Already in `web/.env.local` (safe for browsers). `web/.env.example` documents all variables. |
-| Hosting | Vercel project `bakery-admin` (team "sandymandycandy's projects"), root `web/`, production at **https://bakery-admin-ten.vercel.app**. Last deployed 2026-09-30 from `main` (commit `0a896cd`: blocking, no-shows, item editing). **5A is not deployed.** Deploy with `vercel deploy --prod` from `web/`; **Git integration is not connected**, so pushes do not deploy. `web/vercel.json` pins the Next.js preset (without it the site served only 404s). Production env vars: the Supabase URL and publishable key only. |
-| Version control | GitHub: `sandymandycandy/bakery-admin`. `main` holds everything up to item editing. Phase 5A is on branch `phase-5a-kitchen-tickets`. Secrets (`web/.env.local`, `web/.admin-password.txt`) are git-ignored and must be shared separately. |
+| Hosting | Vercel project `bakery-admin` (team "sandymandycandy's projects"), root `web/`, production at **https://bakery-admin-ten.vercel.app**. Last deployed 2026-10-03 from `main` (commit `be85d89`: Phase 5A kitchen tickets plus review fixes). Deploy with `vercel deploy --prod` from `web/`; **Git integration is not connected**, so pushes do not deploy. `web/vercel.json` pins the Next.js preset (without it the site served only 404s). Production env vars: the Supabase URL and publishable key only. |
+| Version control | GitHub: `sandymandycandy/bakery-admin`. `main` holds all work, including Phase 5A (branches `phase-5a-kitchen-tickets` and `phase-5a-review-fixes` are merged). Secrets (`web/.env.local`, `web/.admin-password.txt`) are git-ignored and must be shared separately. |
 
-**Live database vs deployed app.** The 5A migration is already applied. The deployed app (from `main`) keeps working with it: confirming an order now also creates kitchen tickets, which the old app simply does not show. Merge and deploy 5A so the kitchen screens exist.
 
 ## 3. Running it
 
@@ -161,22 +160,31 @@ Business decisions still needed are listed in PRD section 14 and TODO Phase 0. T
 - If the demo-login variables are ever set on Vercel, the public site pre-fills an admin login for the live database (owner's choice). Remove them before real orders exist.
 - **Orders cannot be completed in the app yet.** Kitchen work ends with "All kitchen items ready"; packing, Ready and handover/Completed arrive in 5B.
 - **Edits after the kitchen acknowledges are refused** (5A holding measure); 5C must add kitchen-acknowledged revisions and preserve prepared quantities.
-- The chef screen refreshes every 10 seconds by polling, not Supabase Realtime.
+- The chef screen refreshes every 10 seconds by polling `GET /kitchen/stamp` (8 s timeout, one request at a time), not Supabase Realtime. A tap that fails on the network shows "Not saved" and switches the header to Offline without reloading the page.
 - Placeholder pages: Reports.
 - Not built yet: chef PIN sign-in on tablets (AC-34, now 5D).
 - `next start` warns about `outputFileTracingRoot` (multiple lockfiles on the machine). Harmless locally.
 - The Supabase free plan allows two active projects, and the owner already has one other active project. A staging project may require pausing a project or upgrading.
 - Leaked-password protection is off (Supabase → Auth → Password security).
+- **Minor items from the 5A review, not yet fixed** (low impact; pick up during 5B/5C):
+  - `kitchen_guard` reads tickets without row locks: a chef acknowledging at the same moment as an admin edit can be reset to New; the opposite lock order of `start_ticket` and the edit path can deadlock (a retry works). Lock the order's tickets in `kitchen_guard`, and lock the order before the ticket in `start_ticket_locked`.
+  - The change stamp uses transaction-start `now()`; a long transaction committing late may not move it until the next change. `count: "exact"` over all tickets grows with history.
+  - A deactivated chef or lost session shows Offline forever instead of going to `/login` (the stamp route returns 401).
+  - "Not saved" can be wrong if the connection dropped after the server committed; the next refresh corrects the screen.
+  - `/admin/kot` default (Open, today) hides open tickets from earlier days.
+  - Part ready Save is not disabled for an admin without a reason (the server refuses it with a message).
+  - Cancelled tickets have no Print button in the order page Kitchen card.
+  - `ResolveIssueForm` has no try/catch around its action.
+  - The `ticket_ready` timeline event omits the admin's reason.
 
 ## 8. Suggested order of work
 
-1. Merge `phase-5a-kitchen-tickets` into `main` and deploy (`vercel deploy --prod` from `web/`).
-2. Add the secret key, create the demo chef, assign kitchens, reset `order_number_seq` to 1001, and add a few test products with kitchen mappings.
-3. **Walk through every screen in a browser** (admin, counter, chef on a tablet-sized window, prints), ideally against a staging project, and fix what you find. Consider Playwright.
-4. Phase 5B: packing and handover (one packing confirmation per order → Ready; one-time handover → Completed, with the balance check; no stock allocation).
-5. Phase 5C: kitchen revisions after acknowledgement (replaces the holding measure in `update_order_items`/`reschedule_order`; see section 11).
-6. Phase 5D: chef PIN sign-in on registered tablets.
-7. Notification templates once the owner picks the channel; Reports (Phase 7); public website (Phase 6) when the owner is ready.
+1. Add the secret key, create the demo chef, assign kitchens, reset `order_number_seq` to 1001, and add a few test products with kitchen mappings.
+2. **Walk through every screen in a browser** (admin, counter, chef on a tablet-sized window, prints), ideally against a staging project, and fix what you find. Consider Playwright.
+3. Phase 5B: packing and handover (one packing confirmation per order → Ready; one-time handover → Completed, with the balance check; no stock allocation).
+4. Phase 5C: kitchen revisions after acknowledgement (replaces the holding measure in `update_order_items`/`reschedule_order`; see section 11).
+5. Phase 5D: chef PIN sign-in on registered tablets.
+6. Notification templates once the owner picks the channel; Reports (Phase 7); public website (Phase 6) when the owner is ready.
 
 ## 9. Customer blocking and no-shows (built 2026-09-30)
 
