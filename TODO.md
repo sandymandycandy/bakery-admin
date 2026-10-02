@@ -1,6 +1,6 @@
 # Bakery Project — To-do List
 
-Status (2026-09-30): Phases 3, 4A and 4B are built and tested. Phase 4C capacity caps, the shared override prompt, and calendar week/day views are built; all of it is on `main` and deployed to Vercel production (https://bakery-admin-ten.vercel.app). Customer blocking and no-shows were built and deployed on 2026-09-30; editing items on pending and confirmed orders was built and deployed the same day. No browser click-through yet. **Next: a browser click-through on staging data, then Phase 5 (KOT)**; notification templates wait for the owner's channel decision. See HANDOVER.md for setup, architecture, and known gaps.
+Status (2026-10-03): Phases 3, 4A and 4B are built and tested. Phase 4C is done except notification templates (waiting for the owner's channel decision). Everything up to item editing is on `main` and deployed (https://bakery-admin-ten.vercel.app). **Phase 5A (kitchen tickets) is built on branch `phase-5a-kitchen-tickets`; its database migration is live, the app is not merged or deployed yet.** No browser click-through yet. **Next: merge and deploy 5A, set up test data, click through every screen, then 5B (packing and handover).** Owner decision 2026-10-02: no stock or inventory tracking. See HANDOVER.md for setup, architecture, and known gaps.
 Checkboxes represent actual completion, not intentions.
 
 ## Start here — next developer
@@ -11,9 +11,10 @@ Checkboxes represent actual completion, not intentions.
 4. [ ] Run the app locally and click through every admin screen in a browser (never done yet — only HTTP-level tests so far).
 5. [ ] Create a staging Supabase project so tests can create bills without consuming the live bill sequence.
 6. [ ] Enable Leaked Password Protection (Supabase → Auth → Password security).
-7. [ ] Continue with Phase 4C below.
+7. [ ] Merge `phase-5a-kitchen-tickets` into `main` and deploy (HANDOVER section 8).
 8. [ ] Decide about demo-login autofill on the live site (`DEMO_*` variables; not set yet). Remove them before real data goes in (HANDOVER section 2).
-9. [ ] Create the demo chef login (`npm run create-admin -- … --role chef`; needs the secret key).
+9. [ ] Create the demo chef login (`npm run create-admin -- … --role chef`; needs the secret key) and assign it to kitchens; `/kitchen` needs it.
+10. [ ] While no real orders exist, reset the order sequence: `alter sequence public.order_number_seq restart with 1001` (test runs moved it to 1076).
 
 ## Phase 0 — Planning and business decisions
 
@@ -80,8 +81,8 @@ Note: items marked done below are specified by the implemented migrations in `su
 - [x] Specify bill numbering (gap-free per financial year), credit notes, and tax calculation (migration 0300/0310).
 - [ ] Specify trusted-device registration and PIN sign-in security.
 - [x] Specify shared order data, staff access, kitchen assignment, and record relationships (migrations 0100/0200).
-- [ ] Specify ticket generation (Phase 5). Transactional confirmation, duplicate prevention (idempotency keys), and conflict handling (order version) are done.
-- [ ] Specify release scheduling, restart recovery, and alert handling (Phase 5). Timezone behaviour is done (business timezone in settings; `web/src/lib/time.ts`).
+- [x] Specify ticket generation (Phase 5): `docs/superpowers/specs/2026-09-30-kitchen-tickets-design.md`. Transactional confirmation, duplicate prevention (idempotency keys), and conflict handling (order version) are done.
+- [x] Specify release scheduling, restart recovery, and alert handling (Phase 5): owner chose release on confirmation, so there is no scheduler to recover. Timezone behaviour is done (business timezone in settings; `web/src/lib/time.ts`).
 - [ ] Specify live updates/reconnect behavior and audit records.
 - [ ] Specify protected order tracking and settle guest versus account access.
 - [ ] Specify stock allocation (blocked on PRD decision 7). Payment and balance calculations are done (`order_summaries` view).
@@ -131,7 +132,7 @@ Depends on: Phase 3.
 - [ ] Verify AC-10 (needs handover, Phase 5), AC-32, and AC-36 once 4C lands.
 - [ ] Set up a staging Supabase project so end-to-end tests can create real bills without touching the live bill sequence (see Start here).
 
-### Phase 4C — next up
+### Phase 4C — done except notification templates
 
 - [x] Pickup windows per weekday with limits, daily caps per category (counting orders), festival date overrides, admin override with reason (AC-32). Cut-offs dropped. **Browser click-through of Settings → Capacity and the new-order/reschedule panels still to do.**
 - [x] Calendar week and day views (day view grouped by pickup window with window and category usage). **Browser click-through still to do** (no orders in the database yet).
@@ -146,18 +147,21 @@ Exit: a staff-entered order remains consistent across lists, detail, calendar, a
 
 ## Phase 5 — KOT and chef workflow
 
-Depends on: confirmed orders from Phase 4.
+Depends on: confirmed orders from Phase 4. Split into 5A (kitchen tickets, built), 5B (packing and handover), 5C (revisions after acknowledgement), 5D (chef PIN sign-in). See HANDOVER section 11.
 
-- [ ] Generate separate kitchen tickets from the relevant order items.
-- [ ] Implement Scheduled/New release timing, restart recovery, and duplicate prevention.
-- [ ] Implement chef queues, kitchen schedule, source filters, and order/item detail.
-- [ ] Implement acknowledgement, preparation, partial quantities, readiness, and issue reporting.
-- [ ] Derive aggregate readiness; implement packing and handover steps.
-- [ ] Implement basic packing confirmation with packer attribution and one-time handover recording (AC-22, basic part).
-- [ ] Implement revisions, cancellation acknowledgements, and controlled kitchen reassignment.
-- [ ] Implement live updates, connectivity state, and recovery.
-- [ ] Implement KOT browser print/reprint (80mm) preserving ticket identity and revision.
-- [ ] Show eggless/veg marks prominently on KOT lines (AC-33).
+- [x] Generate separate kitchen tickets from the relevant order items (5A; `supabase/tests/kitchen_logic.sql` 44/44).
+- [x] Release on confirmation (owner decision 2026-09-30: no scheduled release); duplicate prevention via one ticket per kitchen per order.
+- [x] Implement chef queues, source filters, kitchen switch, and ticket detail (5A, `/kitchen`).
+- [x] Implement acknowledgement, preparation, partial quantities, readiness, and issue reporting (5A).
+- [x] Derive aggregate readiness ("All kitchen items ready"; order stays Preparing until packing) (5A).
+- [ ] Implement basic packing confirmation with packer attribution and one-time handover recording (AC-22, basic part) (5B). No stock allocation (owner decision 2026-10-02).
+- [x] Cancellation acknowledgements (stop-work notices) (5A).
+- [ ] Implement revisions to acknowledged work, preserved prepared quantities, and controlled kitchen reassignment (5C). Until then edits are refused once a kitchen acknowledges.
+- [x] Live updates and connectivity state: 10-second change stamp with Updated/Offline indicator (5A). Supabase Realtime deferred.
+- [x] Implement KOT browser print/reprint (80mm) preserving ticket identity and revision; reprints say COPY (5A).
+- [x] Show eggless/veg marks prominently on KOT lines (AC-33) (5A).
+- [ ] Chef PIN sign-in on registered tablets (AC-34) (5D).
+- [ ] Browser click-through of the chef screen, KOT page, kitchen card and print on a tablet-sized window.
 - [ ] Verify AC-02 through AC-05, AC-08, AC-09, AC-12 through AC-14, AC-16, and AC-33.
 
 Exit: two kitchen users can complete a mixed order without duplicated work or premature readiness.
