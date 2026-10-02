@@ -318,6 +318,122 @@ begin
      where order_id = a and event_type = 'ticket_acknowledged'));
 end $$;
 
+-- ===== Order changes and cancellation (Task 4) =====
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000007a1","role":"authenticated"}', true);
+do $$
+declare
+  o public.orders;
+  e uuid := (select v::uuid from ctx where k = 'E');
+  cake_line uuid := (select id from public.order_items where order_id = (select v::uuid from ctx where k = 'E') and product_name = 'T Kt Cake');
+begin
+  o := public.confirm_order(e, 1);                                               -- version 2
+  -- expect: new, new
+  insert into r(check_name,outcome) values ('D1 edit order starts with two new tickets',
+    (select string_agg(status::text, ', ' order by reference) from public.kitchen_tickets where order_id = e));
+
+  o := public.update_order_items(e, 2, jsonb_build_array(jsonb_build_object('line_id', cake_line, 'quantity', 2)),
+         'Two cakes, no bread');                                                 -- version 3
+  -- expect: TK1 new r2 revised | TK2 cancelled r1 Removed from the order / 1 / 1
+  insert into r(check_name,outcome) values ('D2 edit rebuilds kitchen one and stops kitchen two',
+    (select string_agg(right(reference, 3) || ' ' || status || ' r' || revision
+                       || coalesce(' ' || cancel_reason, case when revised_at is not null then ' revised' else '' end),
+                       ' | ' order by reference)
+     from public.kitchen_tickets where order_id = e)
+    || ' / ' || (select stop_work_pending from public.order_kitchen_progress where order_id = e)
+    || ' / ' || (select count(*) from public.order_events where order_id = e and event_type = 'tickets_revised'));
+  -- expect: 1 cancelled T Kt Bread
+  insert into r(check_name,outcome) values ('D3 stop-work ticket keeps the removed line',
+    (select count(*) || ' ' || min(l.status::text) || ' ' || min(l.product_name)
+     from public.kitchen_ticket_lines l join public.kitchen_tickets t on t.id = l.ticket_id
+     where t.order_id = e and t.reference like '%-TK2'));
+
+  o := public.update_order_items(e, 3, jsonb_build_array(
+         jsonb_build_object('line_id', cake_line, 'quantity', 2),
+         jsonb_build_object('variant_id', (select v from ctx where k = 'bread'), 'quantity', 1)), 'Bread back on');  -- version 4
+  -- expect: TK1 new r2 | TK2 new r2 / 1 line
+  insert into r(check_name,outcome) values ('D4 re-adding a kitchen reopens its ticket; unchanged ticket untouched',
+    (select string_agg(right(reference, 3) || ' ' || status || ' r' || revision, ' | ' order by reference)
+     from public.kitchen_tickets where order_id = e)
+    || ' / ' || (select count(*) from public.kitchen_ticket_lines l join public.kitchen_tickets t on t.id = l.ticket_id
+                 where t.order_id = e and t.reference like '%-TK2') || ' line');
+
+  o := public.reschedule_order(e, 4, pg_temp.day(4), 'Customer moved the pickup');  -- version 5
+  -- expect: r3, r3 / true
+  insert into r(check_name,outcome) values ('D5 reschedule revises every ticket',
+    (select string_agg('r' || revision, ', ' order by reference) from public.kitchen_tickets where order_id = e)
+    || ' / ' || (select bool_and(due_at = o.due_at)::text from public.kitchen_tickets where order_id = e));
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000007f1","role":"authenticated"}', true);
+do $$
+begin
+  perform public.acknowledge_ticket((select id from public.kitchen_tickets
+    where order_id = (select v::uuid from ctx where k = 'E') and reference like '%-TK1'));
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000007a1","role":"authenticated"}', true);
+do $$
+declare
+  o public.orders; h text;
+  e uuid := (select v::uuid from ctx where k = 'E');
+  cake_line uuid := (select id from public.order_items where order_id = (select v::uuid from ctx where k = 'E') and product_name = 'T Kt Cake');
+begin
+  begin perform public.update_order_items(e, 5, jsonb_build_array(jsonb_build_object('line_id', cake_line, 'quantity', 3)), 'One more cake');
+    insert into r(check_name,outcome) values ('D6 edit refused once the kitchen acknowledged', 'ALLOWED');
+  -- expect: kitchen: The kitchen has already acknowledged this order. Cancel it and create a new one, or wait for kitchen revisions.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('D6 edit refused once the kitchen acknowledged', h || ': ' || sqlerrm); end;
+  begin perform public.reschedule_order(e, 5, pg_temp.day(5), 'Later again');
+    insert into r(check_name,outcome) values ('D7 reschedule refused once the kitchen acknowledged', 'ALLOWED');
+  -- expect: kitchen: The kitchen has already acknowledged this order. Cancel it and create a new one, or wait for kitchen revisions.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('D7 reschedule refused once the kitchen acknowledged', h || ': ' || sqlerrm); end;
+
+  o := public.cancel_order(e, 5, 'Customer cancelled');
+  -- expect: cancelled, cancelled / 2 / cancelled, cancelled / Customer cancelled
+  insert into r(check_name,outcome) values ('D8 cancelling raises stop-work on every ticket',
+    (select string_agg(status::text, ', ' order by reference) from public.kitchen_tickets where order_id = e)
+    || ' / ' || (select stop_work_pending from public.order_kitchen_progress where order_id = e)
+    || ' / ' || (select string_agg(l.status::text, ', ' order by t.reference) from public.kitchen_ticket_lines l
+                 join public.kitchen_tickets t on t.id = l.ticket_id where t.order_id = e)
+    || ' / ' || (select min(cancel_reason) from public.kitchen_tickets where order_id = e));
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000007f1","role":"authenticated"}', true);
+do $$
+declare
+  h text; t public.kitchen_tickets;
+  tk1 uuid := (select id from public.kitchen_tickets where order_id = (select v::uuid from ctx where k = 'E') and reference like '%-TK1');
+begin
+  begin perform public.start_ticket(tk1);
+    insert into r(check_name,outcome) values ('D9 no work on a cancelled ticket', 'ALLOWED');
+  -- expect: validation: This ticket was cancelled. Stop work on it.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('D9 no work on a cancelled ticket', h || ': ' || sqlerrm); end;
+  t := public.acknowledge_stop_work(tk1);
+  -- expect: true
+  insert into r(check_name,outcome) values ('D10 chef acknowledges the stop-work', (t.stop_work_acknowledged_at is not null)::text);
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000007a1","role":"authenticated"}', true);
+do $$
+begin
+  -- expect: 1
+  insert into r(check_name,outcome) values ('D11 one stop-work still pending',
+    (select stop_work_pending::text from public.order_kitchen_progress where order_id = (select v::uuid from ctx where k = 'E')));
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000007c1","role":"authenticated"}', true);
+do $$
+declare o public.orders; q uuid := (select v::uuid from ctx where k = 'Q');
+begin
+  o := public.update_order_items(q, 1, jsonb_build_array(
+         jsonb_build_object('line_id', (select id from public.order_items where order_id = q), 'quantity', 2)));
+  -- expect: pending_confirmation / 0
+  insert into r(check_name,outcome) values ('D12 pending orders have no tickets and edit as before',
+    o.status::text || ' / ' || (select count(*) from public.kitchen_tickets where order_id = q));
+end $$;
+
 reset role;
 select check_name, outcome from r order by n;
 rollback;
