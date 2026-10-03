@@ -1006,6 +1006,10 @@ export type Database = {
         Args: never
         Returns: string
       }
+      sales_report: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
       mark_packed: RpcReturnsOrder & {
         Args: { p_expected_version: number; p_note?: string; p_order_id: string }
       }
