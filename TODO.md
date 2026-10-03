@@ -1,12 +1,12 @@
 # Bakery Project — To-do List
 
-Status (2026-10-03): Phases 3, 4A and 4B are built and tested. Phase 4C is done except notification templates (waiting for the owner's channel decision). Phase 5A (kitchen tickets) is built, reviewed and deployed from `main`. **The 5A review fixes and Phase 5B packing and handover are in `main` (merged 2026-10-03) but not deployed yet**; their database migrations are applied to the live project. No browser click-through yet. **Next: deploy `main`, set up test data, click through every screen, then 5C (kitchen revisions).** Owner decision 2026-10-02: no stock or inventory tracking. See HANDOVER.md for setup, architecture, and known gaps.
+Status (2026-10-03): Phases 3, 4A and 4B are built and tested. Phase 4C is done except notification templates (waiting for the owner's channel decision). Phase 5A (kitchen tickets) is built, reviewed and deployed from `main`. **The 5A review fixes and Phase 5B packing and handover are in `main` (merged 2026-10-03)**; their database migrations are applied to the live project, and Vercel's Git integration (connected 2026-10-03) deploys `main` on every push. No browser click-through yet. **Next: confirm the first Git deployment succeeded, set up test data, click through every screen, then 5C (kitchen revisions).** Owner decision 2026-10-02: no stock or inventory tracking. See HANDOVER.md for setup, architecture, and known gaps.
 Checkboxes represent actual completion, not intentions.
 
 ## Start here — next developer
 
 1. [ ] Read [HANDOVER.md](HANDOVER.md), then PRD sections 5F, 7, 10A, and 14A.
-2. [ ] Deploy `main` (`vercel deploy --prod` from `web/`) after confirming the 5B defaults (HANDOVER section 6). The 5A review fixes, Phase 5B and the local SQL test runner were merged into `main` on 2026-10-03; the live database already has their migrations.
+2. [ ] Confirm in the Vercel dashboard that the first Git deployment of `main` (2026-10-03) succeeded; if no Next.js app was found, set the project's Root Directory to `web` and redeploy (HANDOVER section 2). Confirm the 5B defaults (HANDOVER section 6).
 3. [ ] Get access to the Supabase project `auri-bakery` (ask the owner to invite you) and add `SUPABASE_SECRET_KEY` to `web/.env.local`.
 4. [x] Code is on GitHub: `sandymandycandy/bakery-admin` (branch `main`). Clone it; get `web/.env.local` values from the owner.
 5. [ ] Run the app locally and click through every admin screen in a browser (never done yet — only HTTP-level tests so far).
@@ -142,7 +142,7 @@ Depends on: Phase 3.
 - [x] Customer blocking and no-show recording (HANDOVER section 9; `supabase/tests/no_show_logic.sql` 26/26). Recording a no-show does not change the order's status. **Browser click-through still to do.**
 - [x] Editing items on pending and confirmed orders (HANDOVER section 10; `supabase/tests/edit_items_logic.sql` 21/21). **Browser click-through still to do.** Phase 5 must turn edits to released work into acknowledged revisions.
 - [x] Demo-login autofill on `/login` for admin and chef, controlled by `DEMO_*` env variables (owner allowed it in production).
-- [x] First Vercel production deployment (`bakery-admin` project, manual `vercel deploy --prod` from `web/`; Git integration not connected).
+- [x] First Vercel production deployment (`bakery-admin` project, manual `vercel deploy --prod` from `web/`). Git integration connected 2026-10-03: pushes to `main` deploy.
 
 Exit: a staff-entered order remains consistent across lists, detail, calendar, and payment records.
 
@@ -155,7 +155,7 @@ Depends on: confirmed orders from Phase 4. Split into 5A (kitchen tickets, built
 - [x] Implement chef queues, source filters, kitchen switch, and ticket detail (5A, `/kitchen`).
 - [x] Implement acknowledgement, preparation, partial quantities, readiness, and issue reporting (5A).
 - [x] Derive aggregate readiness ("All kitchen items ready"; order stays Preparing until packing) (5A).
-- [x] Implement basic packing confirmation with packer attribution and one-time handover recording (AC-22, basic part) (5B, 2026-10-03; `supabase/tests/packing_logic.sql` 22/22; HANDOVER section 13). No stock allocation (owner decision 2026-10-02). In `main`, not deployed yet; defaults await the owner (HANDOVER section 6).
+- [x] Implement basic packing confirmation with packer attribution and one-time handover recording (AC-22, basic part) (5B, 2026-10-03; `supabase/tests/packing_logic.sql` 22/22; HANDOVER section 13). No stock allocation (owner decision 2026-10-02). In `main`; defaults await the owner (HANDOVER section 6).
 - [x] Fix the minor items from the 5A review: lock order, locked kitchen guard, change stamp, sign-out detection, KOT overdue tickets, and the small UI items (2026-10-03; HANDOVER section 12; `supabase/local/concurrency-kitchen.sh`).
 - [x] Cancellation acknowledgements (stop-work notices) (5A).
 - [ ] Implement revisions to acknowledged work, preserved prepared quantities, and controlled kitchen reassignment (5C). Until then edits are refused once a kitchen acknowledges.
