@@ -15,7 +15,8 @@ Date: 2026-10-03 (first written 2026-09-27). Read this first, then [TODO.md](TOD
 | 4C | **Done except notifications** | Pickup windows, category caps, festival overrides, shared override prompt, calendar week/day views, demo-login autofill, customer blocking and no-shows (section 9), editing items on pending and confirmed orders (section 10). Left: notification templates (waiting for the owner to choose a channel). |
 | 5A Kitchen tickets | **Done and deployed** (2026-10-03) | Tickets per kitchen on confirmation, chef screen, ready counts, issues, stop-work, printed ticket, admin KOT page, kitchen badges (section 11). The minor items from its review were fixed on 2026-10-03 (section 12): database part applied to the live project, web part in `main`. |
 | 5B Packing and handover | **Built and tested** (2026-10-03), in `main` | One packing confirmation → Ready; one handover → Completed, with the balance check and a GST bill; admin reopen and credit handover (section 13). Database part applied to the live project; web part in `main`, deployed by the Git integration (section 2). **Defaults need the owner's confirmation** (section 6). |
-| 5C–5D | Not started | 5C revisions after the kitchen has acknowledged, 5D chef PIN sign-in on tablets. |
+| 5C Kitchen revisions | **Built and tested** (2026-10-03), branch `phase-5c-kitchen-revisions` | Admins change items and the pickup time after the kitchen acknowledged or started: tickets revised in place (ready counts kept), a Changed banner the kitchen acknowledges, packing waits for it (section 14). Database part applied to the live project. |
+| 5D | Not started | Chef PIN sign-in on tablets. |
 | 6 Public website | Not started | Deferred by the owner ("leave the public page for now"). |
 | 7–9 | Not started | Reports, rehearsal, launch, Release 1.1 exceptions. |
 
@@ -28,7 +29,7 @@ The database holds **no products, orders, or bills**: two placeholder kitchens a
 - **No stock or inventory tracking** (owner, 2026-10-02). Ready-stock items are sold without counts or allocation records. Do not design stock counts into any phase, including 5B packing.
 - **Kitchen tickets go to the kitchen as soon as an order is confirmed** (no scheduled release).
 - **Recording a no-show never changes the order's status.**
-- **Item edits and reschedules are refused once a kitchen has acknowledged a ticket**, until 5C adds kitchen revisions. Cancel and recreate meanwhile.
+- **Changes after the kitchen acknowledged** (owner, 2026-10-03): the ticket keeps its status and ready counts and shows the exact changes, which the kitchen acknowledges; packing waits for that. Lowering a quantity below what is already made caps the ready count; nothing records the extra (no waste or counter-sale record).
 
 ## 2. Accounts and access
 
@@ -65,6 +66,8 @@ The SQL rule checks do not need the hosted project. On any PostgreSQL 16+ where 
 supabase/local/run-tests.sh                  # every check file (or name some: run-tests.sh packing_logic)
 supabase/local/concurrency-kitchen.sh        # two-session lock-order check
 ```
+
+**No PostgreSQL on the machine?** `supabase/local/pglite/` runs the same checks on PGlite (Postgres compiled to WebAssembly, in Node): `cd supabase/local/pglite && npm install && node run.mjs [names…]`. It needs Python for `check_results.py`. The 2026-10-03 5C results come from it; it reproduces every earlier result.
 
 `run-tests.sh` builds a scratch database from `supabase/local/shim.sql` (stand-ins for Supabase's `auth` schema and API roles) plus every migration, runs each `supabase/tests/*.sql`, and compares every outcome with the file's `-- expect:` comments. Checks without a machine-checkable expectation (most of `orders_logic` and `billing_logic`) are printed for a person to read.
 
@@ -142,14 +145,15 @@ Files in `supabase/migrations/` were applied to the live project in order throug
 | `supabase/tests/edit_items_logic.sql` | same | 21/21 (2026-10-03). Orders from 990101. |
 | `supabase/tests/kitchen_logic.sql` | same | 48/48 (2026-10-03): access per kitchen, ticket building, chef actions, ready counts and corrections, issues, prints, edits/reschedules while New and refused after acknowledgement, cancel → stop-work, and F1–F4 for the review fixes. Orders from 990201. |
 | `supabase/tests/packing_logic.sql` | same | 22/22 (2026-10-03, Phase 5B): packing refusals, ready-stock-only packing, retries, balance check and credit handover, bill at handover, reopen. Orders from 990301. |
-| `supabase/local/concurrency-kitchen.sh` | run it | PASS (2026-10-03). With `EXCLUDE=20261003000100` (the fix left out) it reports the deadlock it guards against. |
-| `web/src/lib/capacity.test.ts`, `web/src/lib/kitchen.test.ts` | `npm test` | 17/17: pickup-window matching, the chef queue's grouping and ordering, action follow-up, the stamp poller and sign-out detection |
+| `supabase/tests/revisions_logic.sql` | same, or `supabase/local/pglite` | 26/26 (2026-10-03, Phase 5C): who may change preparing orders, in-place revisions with kept/capped ready counts, merged change lists, acknowledgement (who, repeats), removed lines kept as cancelled, stop-work when a kitchen loses everything, New tickets still rebuilt, packing blocked until acknowledged, packed orders reopened first, reschedules, bills without removed lines. Orders from 990401. |
+| `supabase/local/concurrency-kitchen.sh` | run it | PASS (2026-10-03, before 5C). Needs `psql`; not rerun since 5C replaced `kitchen_guard` with `private.revise_tickets` (which takes the same order-then-tickets locks). |
+| `web/src/lib/capacity.test.ts`, `web/src/lib/kitchen.test.ts` | `npm test` | 20/20: pickup-window matching, the chef queue's grouping and ordering (changed tickets first), change-list wording and parsing, action follow-up, the stamp poller and sign-out detection |
 | `web/scripts/e2e/orders-4a.mjs` | Build, `npm start -- -p 3100`, create QA users (`supabase/tests/qa_users.sql`), then `QA_PW=... npm run e2e:orders` | 29/29 (Phase 4A) |
 | `web/scripts/e2e/billing-4b.mjs` | Same setup, `npm run e2e:billing` | 17/19; the 2 failures are test-script issues (assertions depend on leftover data). Fix before relying on it. |
 
 **Prefer the local runner (section 3).** The 2026-10-03 results above come from it; the live project was compared with the migration files separately (section 4). **If you run SQL tests on the live project** through the Supabase MCP tool or any client that returns only the last result: replace the file's last two lines (`select … from r …; rollback;`) with
 `do $$ begin raise exception E'RESULTS\n%', (select string_agg(check_name || ' => ' || coalesce(outcome,'NULL'), E'\n' order by n) from r); end $$;`
-The error message then lists every check, and the exception rolls everything back. In the SQL editor, run the file as is. Compare each outcome with the `-- expect:` comment above it.
+The error message then lists every check, and the exception rolls everything back. `supabase/local/mcp-bundle.sh <test> [migration…]` builds such a batch, with not-yet-applied migrations in front. The Supabase MCP server asks for confirmation on every batch that contains `DELETE`/`UPDATE` without `WHERE` or `DROP` (the test setup does), so prefer the PGlite runner. In the SQL editor, run the file as is. Compare each outcome with the `-- expect:` comment above it.
 
 Caveats:
 - The newer test files insert orders directly with high order numbers, so they do not consume `order_number_seq`. The older ones (`orders_logic`, `capacity_logic`, `billing_logic`) call `create_order` and **do** consume order numbers. Reset the sequence only while no real orders exist.
@@ -183,7 +187,6 @@ Business decisions still needed are listed in PRD section 14 and TODO Phase 0. T
 - If the demo-login variables are ever set on Vercel, the public site pre-fills an admin login for the live database (owner's choice). Remove them before real orders exist.
 - Packing is one confirmation per order. The itemized checklist (cake wording, accessories, packaging) and recipient checks are Release 1.1 (PRD 5D).
 - Handover issues a GST bill when the order has none, which uses a bill number for good. Do not hand over test orders on the live project.
-- **Edits after the kitchen acknowledges are refused** (5A holding measure); 5C must add kitchen-acknowledged revisions and preserve prepared quantities.
 - The chef screen refreshes every 10 seconds by polling `GET /kitchen/stamp` (8 s timeout, one request at a time), which calls `public.ticket_stamp()`; not Supabase Realtime. A tap that fails on the network shows "Not saved" and switches the header to Offline without reloading the page. A lost or deactivated session sends the chef to `/login`.
 - Placeholder pages: Reports.
 - Not built yet: chef PIN sign-in on tablets (AC-34, now 5D).
@@ -197,7 +200,7 @@ Business decisions still needed are listed in PRD section 14 and TODO Phase 0. T
 1. **Check the first Git deployment** of `main` in the Vercel dashboard (section 2); fix the Root Directory if it failed. Confirm the 5B defaults (section 6). The live database already has the migrations.
 2. Add the secret key, create the demo chef, assign kitchens, and add a few test products with kitchen mappings. (The order sequence is already reset to 1001.)
 3. **Walk through every screen in a browser** (admin, counter, chef on a tablet-sized window, prints, and now packing and handover), ideally against a staging project, and fix what you find. Consider Playwright.
-4. Phase 5C: kitchen revisions after acknowledgement (replaces the holding measure in `update_order_items`/`reschedule_order`; see section 11). When an order changes after packing, reopen packing (PRD: changes invalidate packing checks).
+4. Merge `phase-5c-kitchen-revisions` (its migration is already live), then walk the revision flow in a browser: edit a started order, see the Changed banner on `/kitchen` and the order page, acknowledge, pack (section 14).
 5. Phase 5D: chef PIN sign-in on registered tablets (needs the secret key on the server).
 6. Notification templates once the owner picks the channel (PRD 5F proposes WhatsApp click-to-chat links); Reports (Phase 7, AC-35); public website (Phase 6) when the owner is ready.
 
@@ -239,7 +242,7 @@ Spec `docs/superpowers/specs/2026-09-30-kitchen-tickets-design.md`; plan `docs/s
   - Order page Kitchen card; kitchen badges in order lists and the calendar.
   - `/print/kot/[id]`: 80mm, COPY on reprints.
 - **Refresh:** the chef screen polls a change stamp every 10 seconds and reloads only when it changed. Since 2026-10-03 the stamp is `public.ticket_stamp()`: a digest of the `updated_at` values of the tickets that can be on screen (still being worked on, or touched in the last two days), scoped to the chef's kitchens by row-level security. Every ticket write touches `updated_at`.
-- **5C must change** `update_order_items` and `reschedule_order`: replace the `kitchen_guard` refusal with kitchen-acknowledged revisions, preserve prepared quantities, and reduce released lines via `cancelled_quantity` instead of deleting order lines.
+- **Since 5C** (section 14) `private.kitchen_guard` is gone: edits and reschedules revise acknowledged tickets in place instead of being refused.
 
 ## 12. Kitchen review fixes (built 2026-10-03)
 
@@ -260,3 +263,18 @@ Spec `docs/superpowers/specs/2026-10-03-packing-handover-design.md`; migration `
 - **`reopen_packing(order, version, reason)`** (admin): Ready → Preparing (Confirmed without kitchen tickets), packing record cleared, timeline keeps it.
 - **Screens:** order page "Packing & handover" card (what is still missing, Mark packed, handover form with the balance, Reopen); Home "Ready for pickup" list with late collections; timeline entries Packed, Packing reopened, Handed over.
 - **Not done (Release 1.1):** itemized checklist, recipient verification, partial collection, late/uncollected workflow beyond the Home list.
+
+## 14. Kitchen revisions (Phase 5C, built 2026-10-03)
+
+Spec `docs/superpowers/specs/2026-10-03-kitchen-revisions-design.md`; plan `docs/superpowers/plans/2026-10-03-kitchen-revisions.md`; migration `20261003000300_kitchen_revisions.sql` (applied to the live project as `kitchen_revisions`; the live function bodies were compared with the file by `md5(prosrc)`).
+
+- **Owner's decisions:** a revised ticket keeps its status and ready counts and shows a change list the kitchen acknowledges; the chef keeps working. Lowering below the ready count caps it, with no waste record.
+- **Columns:** `kitchen_tickets.pending_changes` (jsonb list of `{key, kind: quantity|notes|pickup, item, from, to}`; an added item is a quantity change from 0, a removed one to 0), `has_pending_changes` (generated), `changes_acknowledged_at/by`. Ticket lines may now be quantity 0 when cancelled. `order_kitchen_progress.changes_pending`.
+- **Functions:**
+  - `update_order_items` and `reschedule_order` now accept **preparing** orders (admin, reason); **ready** (packed) orders are refused with kind `kitchen` ("Reopen packing first"). They call `private.apply_ticket_changes`.
+  - `private.revise_tickets` updates acknowledged, preparing and ready tickets in place (lines matched by `order_item_id`; ready counts kept or capped; new lines added; removed lines kept at 0 as cancelled; pickup moves recorded) and merges the entries into `pending_changes` with `private.merge_ticket_changes` (net change since the last acknowledgement; 2 → 3 → 2 leaves the list). `private.build_tickets` still rebuilds New tickets as in 5A and cancels kitchens with nothing left (stop-work).
+  - An order line the kitchen has acknowledged is no longer deleted when it is left out of an edit: `cancelled_quantity = quantity`, value 0. Sending a removed line's id again is refused.
+  - `public.acknowledge_ticket_changes(ticket, reason)`: the assigned chef, or an admin with a reason; repeats do nothing; timeline `ticket_changes_acknowledged`.
+  - `mark_packed` refuses while any live ticket has unacknowledged changes. `sync_ticket` ignores cancelled lines; `set_line_ready` refuses them. Bills leave out fully cancelled lines.
+- **Screens:** chef screen and order page show a "Changed · revision N" banner with the change list and **Acknowledge changes**; removed lines struck through; Ready tickets with changes stay on the chef's Active tab and sort first. Order page: Edit items and Reschedule on preparing orders, removed items struck through, a hint to reopen packed orders, the packing card names kitchens that have not acknowledged, the timeline lists each change. `/admin/kot`: "Awaiting acknowledgement of changes". Order lists and calendar: "Change unacknowledged" badge. Print: REVISED rN, the change list, removed lines.
+- **Not done:** moving items between kitchens; waste or counter-sale records; edits on billed orders (credit note). Not yet walked through in a browser.

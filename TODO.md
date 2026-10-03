@@ -1,6 +1,6 @@
 # Bakery Project — To-do List
 
-Status (2026-10-03): Phases 3, 4A and 4B are built and tested. Phase 4C is done except notification templates (waiting for the owner's channel decision). Phase 5A (kitchen tickets) is built, reviewed and deployed from `main`. **The 5A review fixes and Phase 5B packing and handover are in `main` (merged 2026-10-03)**; their database migrations are applied to the live project, and Vercel's Git integration (connected 2026-10-03) deploys `main` on every push. No browser click-through yet. **Next: confirm the first Git deployment succeeded, set up test data, click through every screen, then 5C (kitchen revisions).** Owner decision 2026-10-02: no stock or inventory tracking. See HANDOVER.md for setup, architecture, and known gaps.
+Status (2026-10-03): Phases 3, 4A and 4B are built and tested. Phase 4C is done except notification templates (waiting for the owner's channel decision). Phase 5A (kitchen tickets) is built, reviewed and deployed from `main`. **The 5A review fixes and Phase 5B packing and handover are in `main` (merged 2026-10-03)**; their database migrations are applied to the live project, and Vercel's Git integration (connected 2026-10-03) deploys `main` on every push. **Phase 5C (kitchen revisions) is built and tested on branch `phase-5c-kitchen-revisions`; its migration is live.** No browser click-through yet. **Next: merge 5C, set up test data, click through every screen (including the revision flow), then 5D.** Owner decision 2026-10-02: no stock or inventory tracking. See HANDOVER.md for setup, architecture, and known gaps.
 Checkboxes represent actual completion, not intentions.
 
 ## Start here — next developer
@@ -158,7 +158,7 @@ Depends on: confirmed orders from Phase 4. Split into 5A (kitchen tickets, built
 - [x] Implement basic packing confirmation with packer attribution and one-time handover recording (AC-22, basic part) (5B, 2026-10-03; `supabase/tests/packing_logic.sql` 22/22; HANDOVER section 13). No stock allocation (owner decision 2026-10-02). In `main`; defaults await the owner (HANDOVER section 6).
 - [x] Fix the minor items from the 5A review: lock order, locked kitchen guard, change stamp, sign-out detection, KOT overdue tickets, and the small UI items (2026-10-03; HANDOVER section 12; `supabase/local/concurrency-kitchen.sh`).
 - [x] Cancellation acknowledgements (stop-work notices) (5A).
-- [ ] Implement revisions to acknowledged work, preserved prepared quantities, and controlled kitchen reassignment (5C). Until then edits are refused once a kitchen acknowledges.
+- [x] Implement revisions to acknowledged work and preserved prepared quantities (5C, 2026-10-03; `supabase/tests/revisions_logic.sql` 26/26; HANDOVER section 14). Branch `phase-5c-kitchen-revisions`; migration live. Kitchen reassignment is not built (no flow moves items between kitchens).
 - [x] Live updates and connectivity state: 10-second change stamp with Updated/Offline indicator (5A). Supabase Realtime deferred.
 - [x] Implement KOT browser print/reprint (80mm) preserving ticket identity and revision; reprints say COPY (5A).
 - [x] Show eggless/veg marks prominently on KOT lines (AC-33) (5A).
