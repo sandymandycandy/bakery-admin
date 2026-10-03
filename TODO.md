@@ -14,7 +14,7 @@ Checkboxes represent actual completion, not intentions.
 7. [ ] Enable Leaked Password Protection (Supabase → Auth → Password security).
 8. [x] Merge Phase 5A into `main` and deploy (done 2026-10-03).
 9. [ ] Decide about demo-login autofill on the live site (`DEMO_*` variables; not set yet). Remove them before real data goes in (HANDOVER section 2).
-10. [ ] Create the demo chef login (`npm run create-admin -- … --role chef`; needs the secret key) and assign it to kitchens; `/kitchen` needs it.
+10. [x] Create the demo chef login and assign it to kitchens (2026-10-03: chef@auri.test, Kitchen 1 and Kitchen 2; password in web/.admin-password.txt).
 11. [x] While no real orders exist, reset the order sequence (done 2026-10-03: the first real order will be B-1001). Run SQL tests locally from now on so it stays there.
 
 ## Phase 0 — Planning and business decisions
