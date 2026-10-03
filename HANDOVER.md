@@ -23,7 +23,7 @@ Date: 2026-10-03 (first written 2026-09-27). Read this first, then [TODO.md](TOD
 
 **Nothing has been clicked through in a browser yet.** Every check so far is SQL-, typecheck-, lint-, unit-test- and build-level. This is the biggest risk; see section 8.
 
-The database holds **no products, orders, or bills**: two placeholder kitchens and one staff account, **Demo Admin** (no chef yet). The order number sequence was reset on 2026-10-03, so the first real order will be **B-1001**; the first bill will be **AB/2026-27/00001** (bill numbering is transactional and was never consumed). Run the SQL tests locally (section 5), not on the live project: the older test files consume order numbers there.
+**The live database holds demo data** (owner's request, 2026-10-03): 16 demo products in 5 categories, 15 orders B-1001…B-1015 in every state (completed with bills AB/2026-27/00001–00005 and one credit note, preparing, a change awaiting the kitchen, packed awaiting pickup, cancelled with stop-work, rejected, pending, an open kitchen issue), 12 demo customers. Staff: Demo Admin and Demo Chef (both kitchens). Load with `supabase/seed/demo_data.sql`; **before real data goes in, run `supabase/seed/remove_demo_data.sql`** (SQL editor or MCP): it deletes every demo order, bill, payment, customer and product and restarts numbering at B-1001 and bill 00001. Run SQL tests locally (section 5), not on the live project.
 
 ### Owner decisions to keep in mind
 

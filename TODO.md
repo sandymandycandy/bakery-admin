@@ -6,8 +6,8 @@ Checkboxes represent actual completion, not intentions.
 ## Start here — next developer
 
 1. [ ] Read [HANDOVER.md](HANDOVER.md), then PRD sections 5F, 7, 10A, and 14A.
-2. [ ] Confirm in the Vercel dashboard that the first Git deployment of `main` (2026-10-03) succeeded; if no Next.js app was found, set the project's Root Directory to `web` and redeploy (HANDOVER section 2). Confirm the 5B defaults (HANDOVER section 6).
-3. [ ] Get access to the Supabase project `auri-bakery` (ask the owner to invite you) and add `SUPABASE_SECRET_KEY` to `web/.env.local`.
+2. [x] First Git deployment of `main` checked (2026-10-03): it served 404s until the Root Directory was set to `web`; fixed. Check `vercel ls` after each push (HANDOVER section 2).
+3. [x] `SUPABASE_SECRET_KEY` added to `web/.env.local` (2026-10-03). Still needed on Vercel for PIN sign-in. Rotate it before go-live (it was shared in a chat).
 4. [x] Code is on GitHub: `sandymandycandy/bakery-admin` (branch `main`). Clone it; get `web/.env.local` values from the owner.
 5. [ ] Run the app locally and click through every admin screen in a browser (never done yet — only HTTP-level tests so far).
 6. [ ] Create a staging Supabase project so tests can create bills without consuming the live bill sequence. (The SQL checks already run without one: `supabase/local/run-tests.sh`, HANDOVER section 3.)
@@ -16,6 +16,7 @@ Checkboxes represent actual completion, not intentions.
 9. [ ] Decide about demo-login autofill on the live site (`DEMO_*` variables; not set yet). Remove them before real data goes in (HANDOVER section 2).
 10. [x] Create the demo chef login and assign it to kitchens (2026-10-03: chef@auri.test, Kitchen 1 and Kitchen 2; password in web/.admin-password.txt).
 11. [x] While no real orders exist, reset the order sequence (done 2026-10-03: the first real order will be B-1001). Run SQL tests locally from now on so it stays there.
+12. [ ] Before real data: run `supabase/seed/remove_demo_data.sql` on the live project (demo data loaded 2026-10-03: orders B-1001…B-1015, bills 00001–00005). It restarts order and bill numbering.
 
 ## Phase 0 — Planning and business decisions
 
@@ -44,7 +45,7 @@ Checkboxes represent actual completion, not intentions.
 - [ ] Choose OTP provider (or captcha plus callback), submission limits, and deposit threshold.
 - [ ] Supply veg/non-veg, eggless variants, and allergen data for every product.
 - [ ] Set discount permissions/limits, daily/slot caps, ordering cut-offs, and the festival calendar.
-- [ ] Confirm kitchen tablets and PIN sign-in.
+- [x] Confirm kitchen tablets and PIN sign-in (owner, 2026-10-03: admin sets PINs, no auto-lock, no lock-out).
 - [x] Confirm the recommended stack (Next.js + Supabase + Vercel); hosting budget still open.
 
 Exit: material business decisions recorded in PRD; unresolved choices remain explicitly marked.
@@ -80,7 +81,7 @@ Note: items marked done below are specified by the implemented migrations in `su
 
 - [x] Confirm the recommended stack (PRD 10A): Next.js 16 + Supabase + Vercel. Hosting budget still open.
 - [x] Specify bill numbering (gap-free per financial year), credit notes, and tax calculation (migration 0300/0310).
-- [ ] Specify trusted-device registration and PIN sign-in security.
+- [x] Specify trusted-device registration and PIN sign-in security (`docs/superpowers/specs/2026-10-03-chef-pin-signin-design.md`).
 - [x] Specify shared order data, staff access, kitchen assignment, and record relationships (migrations 0100/0200).
 - [x] Specify ticket generation (Phase 5): `docs/superpowers/specs/2026-09-30-kitchen-tickets-design.md`. Transactional confirmation, duplicate prevention (idempotency keys), and conflict handling (order version) are done.
 - [x] Specify release scheduling, restart recovery, and alert handling (Phase 5): owner chose release on confirmation, so there is no scheduler to recover. Timezone behaviour is done (business timezone in settings; `web/src/lib/time.ts`).
@@ -100,7 +101,7 @@ Start only after the user requests coding. Depends on: Phase 2.
 - [x] Set up the Supabase project (auri-bakery, ap-south-1) and the Next.js app in `web/`.
 - [ ] Set up a staging environment (separate Supabase project).
 - [x] Implement staff email sign-in, admin/counter/chef roles, kitchen assignments, and RLS enforcement.
-- [ ] Implement trusted kitchen devices and chef PIN switching (AC-34).
+- [x] Implement trusted kitchen devices and chef PIN switching (AC-34) (5D, 2026-10-03; HANDOVER section 16).
 - [x] Configure two placeholder kitchens and business settings (name, contact, GSTIN, FSSAI).
 - [x] Add opening hours and closures (Settings; enforced on every pickup time, 4A).
 - [x] Add capacity caps and pickup windows (4C, 2026-09-28). Cut-offs dropped by owner decision.
