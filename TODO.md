@@ -192,7 +192,7 @@ Depends on: Phases 4–6, adjusted for chosen public scope.
 
 - [ ] Add kitchen workload and remaining alerts to Home. Due today, awaiting confirmation, overdue, balance due, next-7-days, ready for pickup with late collections (5B), missing-routing alert, and setup checklist are done.
 - [ ] Validate dashboard counts and dates against underlying order records.
-- [ ] Implement the daily sales report with CSV export (AC-35).
+- [x] Implement the daily sales report with CSV export (AC-35). (built 2026-10-03; HANDOVER section 15)
 - [ ] Complete settings and staff-management screens.
 - [ ] Run all Release 1 acceptance scenarios (PRD section 12), including concurrent edits and interrupted connections; run AC-26/AC-27 if selected for launch.
 - [ ] Rehearse exceptions using admin overrides: unavailable item, damaged item, late pickup (AC-36).

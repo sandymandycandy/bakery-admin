@@ -18,7 +18,8 @@ Date: 2026-10-03 (first written 2026-09-27). Read this first, then [TODO.md](TOD
 | 5C Kitchen revisions | **Built, reviewed and deployed** (2026-10-03), in `main` | Admins change items and the pickup time after the kitchen acknowledged or started: tickets revised in place (ready counts kept), a Changed banner the kitchen acknowledges, packing waits for it (section 14). Database part (migrations `20261003000300` and the review fixes `20261003000400`) applied to the live project. |
 | 5D | Not started | Chef PIN sign-in on tablets. |
 | 6 Public website | Not started | Deferred by the owner ("leave the public page for now"). |
-| 7–9 | Not started | Reports, rehearsal, launch, Release 1.1 exceptions. |
+| 7 Reports | **Daily sales report built and deployed** (2026-10-03) | `/admin/reports`: sales by bill date, credit notes, money by method, by product/category/source, CSV (section 15). |
+| 8–9 | Not started | Rehearsal, launch, Release 1.1 exceptions. |
 
 **Nothing has been clicked through in a browser yet.** Every check so far is SQL-, typecheck-, lint-, unit-test- and build-level. This is the biggest risk; see section 8.
 
@@ -145,6 +146,7 @@ Files in `supabase/migrations/` were applied to the live project in order throug
 | `supabase/tests/edit_items_logic.sql` | same | 21/21 (2026-10-03). Orders from 990101. |
 | `supabase/tests/kitchen_logic.sql` | same | 48/48 (2026-10-03): access per kitchen, ticket building, chef actions, ready counts and corrections, issues, prints, edits/reschedules while New and refused after acknowledgement, cancel → stop-work, and F1–F4 for the review fixes. Orders from 990201. |
 | `supabase/tests/packing_logic.sql` | same | 22/22 (2026-10-03, Phase 5B): packing refusals, ready-stock-only packing, retries, balance check and credit handover, bill at handover, reopen. Orders from 990301. |
+| `supabase/tests/report_logic.sql` | `supabase/local/pglite` | 11/11 (2026-10-03, Phase 7): summary, money by method (deposit on an unbilled order), products, categories, sources, AC-35 totals against the bills and credit notes, India-time day boundaries, empty day, range checks, counter refused. Orders from 990501. |
 | `supabase/tests/revisions_logic.sql` | same, or `supabase/local/pglite` | 26/26 (2026-10-03, Phase 5C): who may change preparing orders, in-place revisions with kept/capped ready counts, merged change lists, acknowledgement (who, repeats), removed lines kept as cancelled, stop-work when a kitchen loses everything, New tickets still rebuilt, packing blocked until acknowledged, packed orders reopened first, reschedules, bills without removed lines. Orders from 990401. |
 | `supabase/local/concurrency-kitchen.sh` | run it | PASS (2026-10-03, before 5C). Needs `psql`; not rerun since 5C replaced `kitchen_guard` with `private.revise_tickets` (which takes the same order-then-tickets locks). |
 | `web/src/lib/capacity.test.ts`, `web/src/lib/kitchen.test.ts` | `npm test` | 20/20: pickup-window matching, the chef queue's grouping and ordering (changed tickets first), change-list wording and parsing, action follow-up, the stamp poller and sign-out detection |
@@ -188,7 +190,6 @@ Business decisions still needed are listed in PRD section 14 and TODO Phase 0. T
 - Packing is one confirmation per order. The itemized checklist (cake wording, accessories, packaging) and recipient checks are Release 1.1 (PRD 5D).
 - Handover issues a GST bill when the order has none, which uses a bill number for good. Do not hand over test orders on the live project.
 - The chef screen refreshes every 10 seconds by polling `GET /kitchen/stamp` (8 s timeout, one request at a time), which calls `public.ticket_stamp()`; not Supabase Realtime. A tap that fails on the network shows "Not saved" and switches the header to Offline without reloading the page. A lost or deactivated session sends the chef to `/login`.
-- Placeholder pages: Reports.
 - Not built yet: chef PIN sign-in on tablets (AC-34, now 5D).
 - `next start` warns about `outputFileTracingRoot` (multiple lockfiles on the machine). Harmless locally.
 - The Supabase free plan allows two active projects, and the owner already has one other active project. A staging project may require pausing a project or upgrading.
@@ -280,3 +281,12 @@ Spec `docs/superpowers/specs/2026-10-03-kitchen-revisions-design.md`; plan `docs
 - **Review fixes** (`20261003000400`): removed lines no longer count as already on the order for category caps; `acknowledge_ticket_changes(ticket, reason, expected_revision)` refuses (kind `conflict`) when the order changed again after the screen loaded, so a chef never clears changes they have not seen.
 - **Review minors fixed** (`20261003000500`, 2026-10-03): `order_summaries.kitchen_ids` and the reschedule preview ignore removed lines; stop-work notices and prints leave out earlier-removed lines; an item added and removed before acknowledgement is deleted from the ticket; Ready tickets with changes show only on Active (chef) and once on `/admin/kot`; a ticket made Ready by an edit logs "Order changed: everything left was already made."; `report_issue` refuses removed items; pickup change entries are UTC text. `revisions_logic` 34/34.
 - **Not done:** moving items between kitchens; waste or counter-sale records; edits on billed orders (credit note). Not yet walked through in a browser.
+
+## 15. Daily sales report (Phase 7, built 2026-10-03)
+
+Spec `docs/superpowers/specs/2026-10-03-sales-report-design.md`; plan `docs/superpowers/plans/2026-10-03-sales-report.md`; migration `20261003000600_sales_report.sql` (applied live as `sales_report`).
+
+- **Owner's decision:** admins only.
+- **`public.sales_report(from, to)`** returns JSON in paise: summary (bills, gross, discounts, billed, GST, credit notes, net sales = billed − credit notes, GST on net), money by payment method (received, refunded), and sales by product/variant (from bill lines), category (bill line → order line → category) and source. Days are business-time-zone days; sales on `bills.issued_at`, credit notes on their own `issued_at`, money on `payments.recorded_at`. At most 366 days.
+- **Screens:** `/admin/reports` with Today / Yesterday / This week (from Monday) / This month or custom dates; `/admin/reports/export` downloads the same report as CSV (UTF-8 with BOM for Excel; rupees with two decimals). Helpers and tests: `web/src/lib/report.ts`.
+- Credit notes are not spread over products (they have no line detail); the product table says so.
