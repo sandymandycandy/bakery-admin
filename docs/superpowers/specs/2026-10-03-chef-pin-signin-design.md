@@ -34,9 +34,9 @@ A kitchen tablet is registered once by an admin for one kitchen. On it, a chef t
 
 RLS: admins read; no direct writes (functions only). Audit trigger.
 
-### `staff_profiles` — new columns
+### `staff_pins` (separate table; amended during planning)
 
-`pin_hash text` (bcrypt via pgcrypto `crypt(…, gen_salt('bf'))`), `pin_set_at timestamptz`. Never selectable by staff: column privileges revoke `pin_hash` from `authenticated`.
+`user_id pk → staff_profiles`, `pin_hash text` (bcrypt via `extensions.crypt(…, extensions.gen_salt('bf'))`), `set_at`, `set_by`. RLS on with no policies and all privileges revoked from `anon`/`authenticated`: only the functions below touch it. It is kept out of `staff_profiles` because that table's audit trigger copies whole rows into `audit_events`, and a 4-digit PIN's hash could be cracked from there. PIN changes are written to `audit_events` by hand, without the hash (`PIN_SET` / `PIN_CLEARED`).
 
 ## 3. Functions
 
@@ -53,7 +53,7 @@ RLS: admins read; no direct writes (functions only). Audit trigger.
 3. **PIN check** (server action): `verify_kitchen_pin` with the service-role client. On success the server creates a normal Supabase session for that chef without a password — `auth.admin.generateLink({ type: 'magiclink', email })` then `auth.verifyOtp({ type: 'magiclink', token_hash })` on the cookie-bound server client — and sets a signed cookie `kitchen_pin` = `{ device_id, user_id, signed_in_at }` (HMAC with the secret key). Redirect to `/kitchen`.
 4. **Staying valid**: `/kitchen` and `/kitchen/stamp` check, when `kitchen_pin` is present, that the device is not revoked and the chef's `pin_set_at` is not after `signed_in_at`. If either fails: sign out, clear `kitchen_pin`, and go to `/kitchen/pin` (the stamp route answers 401, which the screen already treats as signed out).
 5. **Switch chef / Sign out** on a registered tablet: sign out and return to `/kitchen/pin`, not `/login`.
-6. `/login` on a registered tablet shows a "Chef PIN sign-in" link to `/kitchen/pin`.
+6. `/login` on a registered tablet goes straight to `/kitchen/pin`; `/login?email=1` (linked from the PIN screen as "Sign in with email") still offers email and password, for an admin who needs to manage the tablet.
 
 ## 5. Screens
 
