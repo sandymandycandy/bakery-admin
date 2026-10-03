@@ -64,13 +64,13 @@ create function pg_temp.day3() returns timestamptz language sql stable as $$
 $$;
 
 -- P pending: cake ×1 · C confirmed: cake ×1, puff ×2 · N confirmed, due in 2 hours: cake ×1
--- Q pending: cake ×1 · D pending with a ₹400 discount: cake ×1 · R preparing · B confirmed with a bill
+-- Q pending: cake ×1 · D pending with a ₹400 discount: cake ×1 · R ready (packed) · B confirmed with a bill
 insert into ctx values ('P', pg_temp.mk_order(990101, 'pending_confirmation', pg_temp.day3())::text);
 insert into ctx values ('C', pg_temp.mk_order(990102, 'confirmed', pg_temp.day3())::text);
 insert into ctx values ('N', pg_temp.mk_order(990103, 'confirmed', now() + interval '2 hours')::text);
 insert into ctx values ('Q', pg_temp.mk_order(990104, 'pending_confirmation', pg_temp.day3())::text);
 insert into ctx values ('D', pg_temp.mk_order(990105, 'pending_confirmation', pg_temp.day3())::text);
-insert into ctx values ('R', pg_temp.mk_order(990106, 'preparing', pg_temp.day3())::text);
+insert into ctx values ('R', pg_temp.mk_order(990106, 'ready', pg_temp.day3())::text);
 insert into ctx values ('B', pg_temp.mk_order(990107, 'confirmed', pg_temp.day3())::text);
 insert into ctx select 'P1', pg_temp.mk_line(v::uuid, 'cake', 1)::text from ctx where k = 'P';
 insert into ctx select 'C1', pg_temp.mk_line(v::uuid, 'cake', 1)::text from ctx where k = 'C';
@@ -230,10 +230,10 @@ begin
 
   begin perform public.update_order_items((select v::uuid from ctx where k = 'R'), 1,
           jsonb_build_array(jsonb_build_object('line_id', (select v from ctx where k = 'R1'), 'quantity', 2)), 'Late change');
-    insert into r(check_name,outcome) values ('E18 preparing order refused', 'ALLOWED');
-  -- expect: validation: Items cannot be changed on a preparing order.
+    insert into r(check_name,outcome) values ('E18 packed order refused until reopened', 'ALLOWED');
+  -- expect: kitchen: This order is packed. Reopen packing before changing its items.
   exception when others then get stacked diagnostics h = pg_exception_hint;
-    insert into r(check_name,outcome) values ('E18 preparing order refused', h || ': ' || sqlerrm); end;
+    insert into r(check_name,outcome) values ('E18 packed order refused until reopened', h || ': ' || sqlerrm); end;
 
   begin perform public.update_order_items((select v::uuid from ctx where k = 'B'), 1,
           jsonb_build_array(jsonb_build_object('line_id', (select v from ctx where k = 'B1'), 'quantity', 2)), 'After billing');

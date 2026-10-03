@@ -382,18 +382,17 @@ declare
   e uuid := (select v::uuid from ctx where k = 'E');
   cake_line uuid := (select id from public.order_items where order_id = (select v::uuid from ctx where k = 'E') and product_name = 'T Kt Cake');
 begin
-  begin perform public.update_order_items(e, 5, jsonb_build_array(jsonb_build_object('line_id', cake_line, 'quantity', 3)), 'One more cake');
-    insert into r(check_name,outcome) values ('D6 edit refused once the kitchen acknowledged', 'ALLOWED');
-  -- expect: kitchen: The kitchen has already acknowledged this order. Cancel it and create a new one, or wait for kitchen revisions.
-  exception when others then get stacked diagnostics h = pg_exception_hint;
-    insert into r(check_name,outcome) values ('D6 edit refused once the kitchen acknowledged', h || ': ' || sqlerrm); end;
-  begin perform public.reschedule_order(e, 5, pg_temp.day(5), 'Later again');
-    insert into r(check_name,outcome) values ('D7 reschedule refused once the kitchen acknowledged', 'ALLOWED');
-  -- expect: kitchen: The kitchen has already acknowledged this order. Cancel it and create a new one, or wait for kitchen revisions.
-  exception when others then get stacked diagnostics h = pg_exception_hint;
-    insert into r(check_name,outcome) values ('D7 reschedule refused once the kitchen acknowledged', h || ': ' || sqlerrm); end;
+  o := public.update_order_items(e, 5, jsonb_build_array(jsonb_build_object('line_id', cake_line, 'quantity', 3)), 'One more cake');
+  -- expect: acknowledged / 1 / cancelled
+  insert into r(check_name,outcome) values ('D6 an edit after acknowledgement revises the ticket (5C)',
+    (select status || ' / ' || jsonb_array_length(pending_changes) from public.kitchen_tickets where order_id = e and reference like '%-TK1')
+    || ' / ' || (select status::text from public.kitchen_tickets where order_id = e and reference like '%-TK2'));
+  o := public.reschedule_order(e, o.version, pg_temp.day(5), 'Later again');
+  -- expect: acknowledged / 2
+  insert into r(check_name,outcome) values ('D7 a reschedule after acknowledgement adds a pickup change (5C)',
+    (select status || ' / ' || jsonb_array_length(pending_changes) from public.kitchen_tickets where order_id = e and reference like '%-TK1'));
 
-  o := public.cancel_order(e, 5, 'Customer cancelled');
+  o := public.cancel_order(e, o.version, 'Customer cancelled');
   -- expect: cancelled, cancelled / 2 / cancelled, cancelled / Customer cancelled
   insert into r(check_name,outcome) values ('D8 cancelling raises stop-work on every ticket',
     (select string_agg(status::text, ', ' order by reference) from public.kitchen_tickets where order_id = e)

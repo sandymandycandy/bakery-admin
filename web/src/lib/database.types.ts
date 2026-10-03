@@ -103,11 +103,15 @@ type KitchenTicketRow = {
   acknowledged_by: string | null
   cancel_reason: string | null
   cancelled_at: string | null
+  changes_acknowledged_at: string | null
+  changes_acknowledged_by: string | null
   created_at: string
   due_at: string
+  has_pending_changes: boolean
   id: string
   kitchen_id: string
   order_id: string
+  pending_changes: Json
   print_count: number
   ready_at: string | null
   ready_by: string | null
@@ -924,6 +928,7 @@ export type Database = {
       order_kitchen_progress: {
         Row: {
           all_ready: boolean | null
+          changes_pending: number | null
           open_issues: number | null
           order_id: string | null
           ready_count: number | null
@@ -976,6 +981,9 @@ export type Database = {
         Args: { p_reason?: string; p_ticket_id: string }
       }
       acknowledge_ticket: RpcReturnsTicket & {
+        Args: { p_reason?: string; p_ticket_id: string }
+      }
+      acknowledge_ticket_changes: RpcReturnsTicket & {
         Args: { p_reason?: string; p_ticket_id: string }
       }
       record_ticket_print: {
