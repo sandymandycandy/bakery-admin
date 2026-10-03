@@ -23,7 +23,7 @@ Today an admin cannot change an order once any kitchen ticket is past New: `priv
 
 | Column | Notes |
 |---|---|
-| `pending_changes jsonb not null default '[]'` | Changes not yet acknowledged. Each entry: `{"kind": "added" \| "quantity" \| "notes" \| "removed" \| "pickup", "item": "Chocolate cake — 1 kg", "from": …, "to": …}` (`from`/`to` are quantities, notes text, or timestamps for `pickup`). `check (jsonb_typeof(pending_changes) = 'array')`. |
+| `pending_changes jsonb not null default '[]'` | Changes not yet acknowledged. Each entry: `{"key": …, "kind": "quantity" \| "notes" \| "pickup", "item": "Chocolate cake — 1 kg", "from": …, "to": …}` (`from`/`to` are quantities, notes text, or timestamps for `pickup`). An added item is a quantity change from 0 and a removed one a quantity change to 0, so adding then removing an item before acknowledgement nets out. `key` is `qty:<order line>`, `notes:<order line>` or `pickup`. `check (jsonb_typeof(pending_changes) = 'array')`. |
 | `changes_acknowledged_at timestamptz`, `changes_acknowledged_by uuid → staff_profiles` | Last acknowledgement. |
 
 A ticket "has unacknowledged changes" when `jsonb_array_length(pending_changes) > 0`.
