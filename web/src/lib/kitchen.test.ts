@@ -136,3 +136,39 @@ test("any other failure from the stamp request is offline", async () => {
   }, { timeoutMs: 1000 });
   assert.deepEqual(await poll(), { kind: "offline" });
 });
+
+import { describeChange, parseTicketChanges } from "./kitchen.ts";
+
+const fmt = (iso: string) => `T(${iso.slice(11, 16)})`;
+
+test("describes added, changed and removed items, notes and pickup moves", () => {
+  const c = (kind: "quantity" | "notes" | "pickup", item: string, from: number | string | null, to: number | string | null) =>
+    describeChange({ key: "k", kind, item, from, to }, fmt);
+  assert.equal(c("quantity", "Chocolate cake — 1 kg", 2, 3), "Chocolate cake — 1 kg: 2 → 3");
+  assert.equal(c("quantity", "Butter cookies — Each", 0, 12), "New: Butter cookies — Each × 12");
+  assert.equal(c("quantity", "Plum cake — 500 g", 4, 0), "Plum cake — 500 g: removed");
+  assert.equal(c("notes", "Chocolate cake — 1 kg", null, "Happy Birthday Asha"), "Chocolate cake — 1 kg: note “Happy Birthday Asha”");
+  assert.equal(c("notes", "Chocolate cake — 1 kg", "Old", null), "Chocolate cake — 1 kg: note removed");
+  assert.equal(c("pickup", "Pickup", "2026-10-04T11:30:00Z", "2026-10-04T13:30:00Z"), "Pickup: T(11:30) → T(13:30)");
+});
+
+test("parses change lists from the database and drops malformed entries", () => {
+  const parsed = parseTicketChanges([
+    { key: "qty:1", kind: "quantity", item: "Cake — 1 kg", from: 2, to: 3 },
+    { key: "x", kind: "colour", item: "?", from: 1, to: 2 },
+    "junk",
+  ]);
+  assert.deepEqual(parsed, [{ key: "qty:1", kind: "quantity", item: "Cake — 1 kg", from: 2, to: 3 }]);
+  assert.deepEqual(parseTicketChanges(null), []);
+});
+
+test("tickets with unacknowledged changes come first in their day group", () => {
+  const groups = groupQueue(
+    [
+      { id: "early", due_at: "2026-10-01T10:00:00Z", start_by: "2026-10-01T08:00:00Z", pending_changes: [] },
+      { id: "changed", due_at: "2026-10-01T18:00:00Z", start_by: "2026-10-01T16:00:00Z", pending_changes: [{}] },
+    ],
+    opts,
+  );
+  assert.deepEqual(groups[0].tickets.map((t) => t.id), ["changed", "early"]);
+});
