@@ -700,7 +700,17 @@ export type Database = {
       }
       orders: {
         // order_summaries was created with o.* before these columns existed, so only the table has them.
-        Row: OrderRow & { no_show_at: string | null; no_show_by: string | null }
+        Row: OrderRow & {
+          no_show_at: string | null
+          no_show_by: string | null
+          // Phase 5B packing and handover
+          packed_at: string | null
+          packed_by: string | null
+          packing_note: string | null
+          handed_over_by: string | null
+          collected_by: string | null
+          credit_reason: string | null
+        }
         Insert: never
         Update: never
         Relationships: [
@@ -987,6 +997,15 @@ export type Database = {
       ticket_stamp: {
         Args: never
         Returns: string
+      }
+      mark_packed: RpcReturnsOrder & {
+        Args: { p_expected_version: number; p_note?: string; p_order_id: string }
+      }
+      reopen_packing: RpcReturnsOrder & {
+        Args: { p_expected_version: number; p_order_id: string; p_reason: string }
+      }
+      record_handover: RpcReturnsOrder & {
+        Args: { p_collected_by?: string; p_credit_reason?: string; p_expected_version: number; p_order_id: string }
       }
       apply_discount: RpcReturnsOrder & {
         Args: { p_expected_version: number; p_kind: string; p_order_id: string; p_reason?: string; p_value: number }

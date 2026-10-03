@@ -368,3 +368,63 @@ export async function issueCreditNoteAction(input: z.input<typeof creditSchema>)
   await afterChange(parsed.data.orderId);
   return { ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// Packing and handover (Phase 5B)
+// ---------------------------------------------------------------------------
+
+const packSchema = z.object({ orderId: z.uuid(), version: z.number().int(), note: optionalText(300) });
+
+export async function markPackedAction(input: z.input<typeof packSchema>): Promise<Result> {
+  await assertRole(["admin", "counter"]);
+  const parsed = packSchema.safeParse(input);
+  if (!parsed.success) return { message: "Keep the packing note under 300 characters." };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("mark_packed", {
+    p_order_id: parsed.data.orderId,
+    p_expected_version: parsed.data.version,
+    p_note: parsed.data.note,
+  });
+  if (error) return rpcError(error);
+  await afterChange(parsed.data.orderId);
+  return { ok: true };
+}
+
+export async function reopenPackingAction(input: z.input<typeof transitionSchema>): Promise<Result> {
+  await assertRole(["admin"]);
+  const parsed = transitionSchema.safeParse(input);
+  if (!parsed.success || !parsed.data.reason) return { message: "Give a reason for reopening." };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("reopen_packing", {
+    p_order_id: parsed.data.orderId,
+    p_expected_version: parsed.data.version,
+    p_reason: parsed.data.reason,
+  });
+  if (error) return rpcError(error);
+  await afterChange(parsed.data.orderId);
+  return { ok: true };
+}
+
+const handoverSchema = z.object({
+  orderId: z.uuid(),
+  version: z.number().int(),
+  collectedBy: optionalText(80),
+  // An admin's reason for handing over with a balance due (the "balance" refusal's override).
+  creditReason: optionalText(300),
+});
+
+export async function recordHandoverAction(input: z.input<typeof handoverSchema>): Promise<Result> {
+  await assertRole(["admin", "counter"]);
+  const parsed = handoverSchema.safeParse(input);
+  if (!parsed.success) return { message: "Keep the collector's name under 80 characters." };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("record_handover", {
+    p_order_id: parsed.data.orderId,
+    p_expected_version: parsed.data.version,
+    p_collected_by: parsed.data.collectedBy,
+    p_credit_reason: parsed.data.creditReason,
+  });
+  if (error) return rpcError(error);
+  await afterChange(parsed.data.orderId);
+  return { ok: true };
+}

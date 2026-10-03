@@ -11,10 +11,12 @@ import { dateToZonedLocal, formatDateTime } from "@/lib/time";
 import { Alert, Badge, Card, PageHeader, VegMark } from "@/components/ui";
 import { KitchenFlags, SourceBadge, StatusBadge } from "@/components/order-badges";
 import { NoShowPanel, OrderActions, PaymentForm } from "./order-actions";
+import { FulfilmentPanel } from "./fulfilment-panel";
 import { BillPanel, DiscountForm } from "./billing-panel";
 import { EditItems } from "./edit-items";
 import { loadCatalogue } from "@/lib/catalogue";
 import { ticketsQuery, toKitchenTickets } from "@/lib/kitchen-data";
+import { ticketStatusLabel } from "@/lib/kitchen";
 import { StopWorkNotice, TicketCard } from "@/components/kitchen/ticket-card";
 
 export const metadata: Metadata = { title: "Order" };
@@ -44,6 +46,9 @@ const eventLabel: Record<string, string> = {
   tickets_revised: "Kitchen tickets revised",
   no_show_recorded: "No-show recorded",
   no_show_undone: "No-show undone",
+  packed: "Packed",
+  packing_reopened: "Packing reopened",
+  handed_over: "Handed over",
 };
 
 // PRD 5F: only orders the customer should have collected can count as a no-show.
@@ -68,8 +73,12 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
       supabase.from("staff_profiles").select("user_id, full_name"),
       supabase.from("bills").select("id, bill_number, total_paise, issued_at, credit_notes(id, credit_note_number, total_paise, reason, issued_at)").eq("order_id", id).maybeSingle(),
       supabase.from("business_settings").select("counter_discount_limit_bps").single(),
-      // order_summaries predates the no-show columns, so read them (and the customer's flags) from orders.
-      supabase.from("orders").select("no_show_at, no_show_by, customers(id, is_blocked, no_show_count)").eq("id", id).maybeSingle(),
+      // order_summaries predates the no-show and packing columns, so read them (and the customer's flags) from orders.
+      supabase
+        .from("orders")
+        .select("no_show_at, no_show_by, packed_at, packed_by, packing_note, handed_over_by, collected_by, credit_reason, customers(id, is_blocked, no_show_count)")
+        .eq("id", id)
+        .maybeSingle(),
     ]);
   if (!order || !order.id || !order.status || !order.source) notFound();
 
@@ -90,6 +99,9 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
   const kitchenLocked = tickets.some((t) => t.status !== "new" && t.status !== "cancelled");
   const kitchenAllReady = tickets.some((t) => t.status !== "cancelled") && tickets.every((t) => t.status === "ready" || t.status === "cancelled");
   const kitchenIssues = tickets.some((t) => t.issues.some((i) => !i.resolved_at));
+  const waitingKitchens = tickets
+    .filter((t) => t.status !== "ready" && t.status !== "cancelled")
+    .map((t) => `${kitchenName.get(t.kitchen_id) ?? "Kitchen"} (${ticketStatusLabel[t.status].toLowerCase()})`);
   const canEditItems =
     !bill && !kitchenLocked && (["draft", "pending_confirmation"].includes(order.status) || (order.status === "confirmed" && isAdmin));
   const catalogue = canEditItems ? await loadCatalogue(supabase) : [];
@@ -143,7 +155,11 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
       <div className="flex flex-col gap-6">
         {created === "1" && (
           <Alert tone="ok" title={order.status === "confirmed" ? "Order created and confirmed" : "Order created"}>
-            {order.status === "pending_confirmation" ? "It is waiting for confirmation before any kitchen work is released." : "Kitchen tickets will be generated from confirmed orders in Phase 5."}
+            {order.status === "pending_confirmation"
+              ? "It is waiting for confirmation before any kitchen work is released."
+              : tickets.length > 0
+                ? "Kitchen tickets have gone to the kitchens."
+                : "No kitchen work is needed: pack the items when the customer is ready."}
           </Alert>
         )}
         {order.closed_reason && (
@@ -285,6 +301,27 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
+          {["confirmed", "preparing", "ready", "completed"].includes(order.status) && (
+            <Card className="lg:col-span-2">
+              <h2 className="mb-3 text-lg font-semibold">Packing &amp; handover</h2>
+              <FulfilmentPanel
+                key={`f-${order.version}`}
+                orderId={order.id}
+                version={order.version ?? 0}
+                status={order.status}
+                isAdmin={isAdmin}
+                balancePaise={balance}
+                waitingKitchens={waitingKitchens}
+                openIssues={kitchenIssues}
+                packed={noShow?.packed_at ? { label: `${formatDateTime(noShow.packed_at, tz)} · ${who(noShow.packed_by)}`, note: noShow.packing_note } : null}
+                handedOver={
+                  noShow?.handed_over_by && order.completed_at
+                    ? { label: `${formatDateTime(order.completed_at, tz)} · ${who(noShow.handed_over_by)}`, collectedBy: noShow.collected_by, creditReason: noShow.credit_reason }
+                    : null
+                }
+              />
+            </Card>
+          )}
           <Card>
             <div className="mb-3 flex items-baseline justify-between gap-3">
               <h2 className="text-lg font-semibold">Payments</h2>
@@ -389,6 +426,13 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
                         {data.ticket}
                         {typeof data.kitchen === "string" && ` · ${data.kitchen}`}
                       </p>
+                    )}
+                    {e.event_type === "packed" && typeof data.note === "string" && <p className="text-xs">Note: {data.note}</p>}
+                    {e.event_type === "handed_over" && typeof data.collected_by === "string" && (
+                      <p className="text-xs">Collected by {data.collected_by}</p>
+                    )}
+                    {e.event_type === "handed_over" && typeof data.balance_paise === "number" && (
+                      <p className="text-xs">On credit: {formatPaise(data.balance_paise)} due</p>
                     )}
                     {e.event_type === "ready_count_corrected" && typeof data.line === "string" && (
                       <p className="text-xs">{data.line}: {String(data.from)} → {String(data.to)} ready</p>

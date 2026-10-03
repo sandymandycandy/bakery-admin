@@ -54,8 +54,9 @@ export function rpcError(error: PostgrestError): RpcFailure {
   return { message: `Something went wrong: ${error.message}`, kind: "error" };
 }
 
-// Refusals an admin may override with a recorded reason (AC-32, AC-36).
-export const OVERRIDABLE_KINDS = new Set(["slot", "lead_time", "blocked", "capacity"]);
+// Refusals an admin may override with a recorded reason (AC-32, AC-36). "balance": handing over
+// with money still due, as an admin credit exception (AC-10).
+export const OVERRIDABLE_KINDS = new Set(["slot", "lead_time", "blocked", "capacity", "balance"]);
 
 // Matches the database check in create_order, confirm_order and reschedule_order.
 export const OVERRIDE_REASON_MIN = 5;

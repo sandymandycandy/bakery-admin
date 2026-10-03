@@ -30,7 +30,7 @@ export default async function AdminHome() {
   const nowIso = new Date().toISOString();
   const supabase = await createClient();
 
-  const [dueToday, pending, overdue, upcoming, unmapped, settings, chefs, products] = await Promise.all([
+  const [dueToday, pending, overdue, upcoming, unmapped, settings, chefs, products, readyOrders] = await Promise.all([
     supabase.from("order_summaries").select("id, source, status, balance_paise").in("status", OPEN_STATUSES)
       .gte("due_at", start.toISOString()).lt("due_at", end.toISOString()),
     supabase.from("orders").select("id", { count: "exact", head: true }).eq("status", "pending_confirmation"),
@@ -41,12 +41,18 @@ export default async function AdminHome() {
     supabase.from("business_settings").select("gstin, fssai_licence").single(),
     isAdmin ? supabase.from("staff_profiles").select("user_id").eq("role", "chef").eq("is_active", true) : Promise.resolve({ data: null }),
     supabase.from("products").select("id", { count: "exact", head: true }).is("archived_at", null),
+    supabase.from("order_summaries").select("id, reference, source, customer_name, due_at, balance_paise")
+      .eq("status", "ready").order("due_at").limit(20),
   ]);
 
   const todays = dueToday.data ?? [];
   const inStore = todays.filter((o) => o.source === "IN_STORE").length;
   const balanceDue = todays.reduce((s, o) => s + Math.max(0, o.balance_paise ?? 0), 0);
   const unmappedCount = unmapped.data?.length ?? 0;
+  // Packed and waiting for the customer; past the pickup time they are late collections (PRD 5D).
+  const ready = readyOrders.data ?? [];
+  const isLate = (due: string | null) => Boolean(due && Date.parse(due) < Date.parse(nowIso));
+  const late = ready.filter((o) => isLate(o.due_at)).length;
 
   const setup = [
     { done: (products.count ?? 0) > 0, label: "Add categories and products", href: "/admin/products" },
@@ -86,6 +92,34 @@ export default async function AdminHome() {
         <p className="-mt-3 text-sm text-muted">
           Due today: {inStore} in-store · {todays.length - inStore} online / call.
         </p>
+
+        {ready.length > 0 && (
+          <Card>
+            <div className="mb-3 flex items-baseline justify-between">
+              <h2 className="text-lg font-semibold">
+                Ready for pickup <span className="text-muted">({ready.length})</span>
+              </h2>
+              {late > 0 && <Badge tone="danger">{late} late</Badge>}
+            </div>
+            <ul className="divide-y divide-line">
+              {ready.map((o) => {
+                const overdue = isLate(o.due_at);
+                return (
+                  <li key={o.id}>
+                    <Link href={`/admin/orders/${o.id}`} className="flex flex-wrap items-center gap-3 py-2.5 hover:text-brand">
+                      <span className={`w-40 text-sm ${overdue ? "font-semibold text-danger" : ""}`}>{o.due_at && formatDateTime(o.due_at, tz)}</span>
+                      <span className="font-mono text-sm">{o.reference}</span>
+                      <span className="flex-1 text-sm">{o.customer_name ?? "Walk-in"}</span>
+                      {o.source && <SourceBadge source={o.source} />}
+                      {(o.balance_paise ?? 0) > 0 && <Badge tone="warn">Due {formatPaise(o.balance_paise ?? 0)}</Badge>}
+                      {overdue && <Badge tone="danger">Late</Badge>}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        )}
 
         <Card>
           <div className="mb-3 flex items-baseline justify-between">
