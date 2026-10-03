@@ -2,7 +2,7 @@
 
 Date: 2026-10-03 (first written 2026-09-27). Read this first, then [TODO.md](TODO.md) ("Start here"), [PRD.md](PRD.md), and [PROJECT_RULES.md](PROJECT_RULES.md). Designs and plans for recent work are in `docs/superpowers/specs/` and `docs/superpowers/plans/`.
 
-**Latest work is on branch `claude/exciting-goldberg-09thku`** (the 5A review fixes, Phase 5B packing and handover, and a local SQL test runner). It is pushed to GitHub and its database migrations are applied to the live project, but it is **not merged into `main` and not deployed**. Next step: open a pull request into `main`, review it (including the 5B defaults in section 6), merge, deploy.
+**Latest work** (the 5A review fixes, Phase 5B packing and handover, and a local SQL test runner) was built on branch `claude/exciting-goldberg-09thku` and **merged into `main` on 2026-10-03**. Its database migrations are applied to the live project, but the web app is **not deployed yet**: confirm the 5B defaults (section 6), then deploy `main` with `vercel deploy --prod` from `web/`.
 
 ## 1. Where things stand
 
@@ -13,8 +13,8 @@ Date: 2026-10-03 (first written 2026-09-27). Read this first, then [TODO.md](TOD
 | 4A Orders | **Done** | In-store and call orders, two order lists, order detail, confirm/reject/cancel/reschedule, payments and refunds, calendar, opening hours and closures, customers. |
 | 4B Billing | **Done** | Counter quick sale, discounts, GST bills (gap-free per financial year), credit notes, 80mm and A4 print. |
 | 4C | **Done except notifications** | Pickup windows, category caps, festival overrides, shared override prompt, calendar week/day views, demo-login autofill, customer blocking and no-shows (section 9), editing items on pending and confirmed orders (section 10). Left: notification templates (waiting for the owner to choose a channel). |
-| 5A Kitchen tickets | **Done and deployed** (2026-10-03) | Tickets per kitchen on confirmation, chef screen, ready counts, issues, stop-work, printed ticket, admin KOT page, kitchen badges (section 11). The minor items from its review were fixed on 2026-10-03 (section 12): database part applied to the live project, web part on the branch (not deployed). |
-| 5B Packing and handover | **Built and tested** (2026-10-03), on the branch | One packing confirmation → Ready; one handover → Completed, with the balance check and a GST bill; admin reopen and credit handover (section 13). Database part applied to the live project; web part not deployed. **Defaults need the owner's confirmation** (section 6). |
+| 5A Kitchen tickets | **Done and deployed** (2026-10-03) | Tickets per kitchen on confirmation, chef screen, ready counts, issues, stop-work, printed ticket, admin KOT page, kitchen badges (section 11). The minor items from its review were fixed on 2026-10-03 (section 12): database part applied to the live project, web part in `main` (not deployed yet). |
+| 5B Packing and handover | **Built and tested** (2026-10-03), in `main` | One packing confirmation → Ready; one handover → Completed, with the balance check and a GST bill; admin reopen and credit handover (section 13). Database part applied to the live project; web part not deployed yet. **Defaults need the owner's confirmation** (section 6). |
 | 5C–5D | Not started | 5C revisions after the kitchen has acknowledged, 5D chef PIN sign-in on tablets. |
 | 6 Public website | Not started | Deferred by the owner ("leave the public page for now"). |
 | 7–9 | Not started | Reports, rehearsal, launch, Release 1.1 exceptions. |
@@ -40,8 +40,8 @@ The database holds **no products, orders, or bills**: two placeholder kitchens a
 | Demo-login autofill | `/login` pre-fills the demo logins while `DEMO_ADMIN_EMAIL`/`DEMO_ADMIN_PASSWORD` (and `DEMO_CHEF_*`) are set. **The owner chose to allow this in production.** Anyone who opens the site is then pre-filled as admin on the live database. **Not set anywhere yet.** Delete the variables and redeploy to turn it off; do so before real data goes in. |
 | Secret key | **Not configured.** Copy it from Supabase → Project Settings → API Keys into `web/.env.local` as `SUPABASE_SECRET_KEY`. Without it, Staff & Kitchens is read-only (no creating logins or resetting passwords). Never commit it. |
 | Publishable key and URL | Already in `web/.env.local` (safe for browsers). `web/.env.example` documents all variables. |
-| Hosting | Vercel project `bakery-admin` (team "sandymandycandy's projects"), root `web/`, production at **https://bakery-admin-ten.vercel.app**. Last deployed 2026-10-03 from `main` (commit `be85d89`: Phase 5A kitchen tickets plus review fixes). The branch `claude/exciting-goldberg-09thku` is **not deployed**; its database migrations are already on the live project and only add things, so the deployed `main` keeps working. Deploy with `vercel deploy --prod` from `web/`; **Git integration is not connected**, so pushes do not deploy. `web/vercel.json` pins the Next.js preset (without it the site served only 404s). Production env vars: the Supabase URL and publishable key only. |
-| Version control | GitHub: `sandymandycandy/bakery-admin`. `main` holds all work up to Phase 5A (branches `phase-5a-kitchen-tickets` and `phase-5a-review-fixes` are merged). Branch **`claude/exciting-goldberg-09thku`** adds the 5A review fixes, Phase 5B and the local SQL test runner; merge it through a pull request. Secrets (`web/.env.local`, `web/.admin-password.txt`) are git-ignored and must be shared separately. |
+| Hosting | Vercel project `bakery-admin` (team "sandymandycandy's projects"), root `web/`, production at **https://bakery-admin-ten.vercel.app**. Last deployed 2026-10-03 from `main` (commit `be85d89`: Phase 5A kitchen tickets plus review fixes). `main` has moved on since (the 5A review fixes and Phase 5B, merged 2026-10-03) and is **not deployed yet**; their database migrations are already on the live project and only add things, so the deployed version keeps working until then. Deploy with `vercel deploy --prod` from `web/`; **Git integration is not connected**, so pushes do not deploy. `web/vercel.json` pins the Next.js preset (without it the site served only 404s). Production env vars: the Supabase URL and publishable key only. |
+| Version control | GitHub: `sandymandycandy/bakery-admin`. `main` holds all work, including Phase 5B (branches `phase-5a-kitchen-tickets`, `phase-5a-review-fixes` and `claude/exciting-goldberg-09thku` are merged). Secrets (`web/.env.local`, `web/.admin-password.txt`) are git-ignored and must be shared separately. |
 
 
 ## 3. Running it
@@ -194,7 +194,7 @@ Business decisions still needed are listed in PRD section 14 and TODO Phase 0. T
 
 ## 8. Suggested order of work
 
-1. **Merge the branch.** Open a pull request from `claude/exciting-goldberg-09thku` into `main`, review it (confirm the 5B defaults in section 6), merge, and deploy with `vercel deploy --prod` from `web/`. The live database already has its migrations.
+1. **Deploy `main`.** Confirm the 5B defaults (section 6), then deploy with `vercel deploy --prod` from `web/`. The live database already has the migrations.
 2. Add the secret key, create the demo chef, assign kitchens, and add a few test products with kitchen mappings. (The order sequence is already reset to 1001.)
 3. **Walk through every screen in a browser** (admin, counter, chef on a tablet-sized window, prints, and now packing and handover), ideally against a staging project, and fix what you find. Consider Playwright.
 4. Phase 5C: kitchen revisions after acknowledgement (replaces the holding measure in `update_order_items`/`reschedule_order`; see section 11). When an order changes after packing, reopen packing (PRD: changes invalidate packing checks).
