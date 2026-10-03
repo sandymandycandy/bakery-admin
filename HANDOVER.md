@@ -2,6 +2,8 @@
 
 Date: 2026-10-03 (first written 2026-09-27). Read this first, then [TODO.md](TODO.md) ("Start here"), [PRD.md](PRD.md), and [PROJECT_RULES.md](PROJECT_RULES.md). Designs and plans for recent work are in `docs/superpowers/specs/` and `docs/superpowers/plans/`.
 
+**Latest work is on branch `claude/exciting-goldberg-09thku`** (the 5A review fixes, Phase 5B packing and handover, and a local SQL test runner). It is pushed to GitHub and its database migrations are applied to the live project, but it is **not merged into `main` and not deployed**. Next step: open a pull request into `main`, review it (including the 5B defaults in section 6), merge, deploy.
+
 ## 1. Where things stand
 
 | Phase | State | What exists |
@@ -11,14 +13,15 @@ Date: 2026-10-03 (first written 2026-09-27). Read this first, then [TODO.md](TOD
 | 4A Orders | **Done** | In-store and call orders, two order lists, order detail, confirm/reject/cancel/reschedule, payments and refunds, calendar, opening hours and closures, customers. |
 | 4B Billing | **Done** | Counter quick sale, discounts, GST bills (gap-free per financial year), credit notes, 80mm and A4 print. |
 | 4C | **Done except notifications** | Pickup windows, category caps, festival overrides, shared override prompt, calendar week/day views, demo-login autofill, customer blocking and no-shows (section 9), editing items on pending and confirmed orders (section 10). Left: notification templates (waiting for the owner to choose a channel). |
-| 5A Kitchen tickets | **Done and deployed** (2026-10-03) | Tickets per kitchen on confirmation, chef screen, ready counts, issues, stop-work, printed ticket, admin KOT page, kitchen badges (section 11). Reviewed; review fixes deployed. |
-| 5B–5D | Not started | 5B packing and handover (orders reach Ready and Completed), 5C revisions after the kitchen has acknowledged, 5D chef PIN sign-in on tablets. |
+| 5A Kitchen tickets | **Done and deployed** (2026-10-03) | Tickets per kitchen on confirmation, chef screen, ready counts, issues, stop-work, printed ticket, admin KOT page, kitchen badges (section 11). The minor items from its review were fixed on 2026-10-03 (section 12): database part applied to the live project, web part on the branch (not deployed). |
+| 5B Packing and handover | **Built and tested** (2026-10-03), on the branch | One packing confirmation → Ready; one handover → Completed, with the balance check and a GST bill; admin reopen and credit handover (section 13). Database part applied to the live project; web part not deployed. **Defaults need the owner's confirmation** (section 6). |
+| 5C–5D | Not started | 5C revisions after the kitchen has acknowledged, 5D chef PIN sign-in on tablets. |
 | 6 Public website | Not started | Deferred by the owner ("leave the public page for now"). |
 | 7–9 | Not started | Reports, rehearsal, launch, Release 1.1 exceptions. |
 
 **Nothing has been clicked through in a browser yet.** Every check so far is SQL-, typecheck-, lint-, unit-test- and build-level. This is the biggest risk; see section 8.
 
-The database holds **no products, orders, or bills**. The only staff account is **Demo Admin**. Test runs have advanced the order number sequence to 1076; while no real orders exist, reset it so the first real order is B-1001: `alter sequence public.order_number_seq restart with 1001`. The first bill will be **AB/2026-27/00001** (bill numbering is transactional and was never consumed).
+The database holds **no products, orders, or bills**: two placeholder kitchens and one staff account, **Demo Admin** (no chef yet). The order number sequence was reset on 2026-10-03, so the first real order will be **B-1001**; the first bill will be **AB/2026-27/00001** (bill numbering is transactional and was never consumed). Run the SQL tests locally (section 5), not on the live project: the older test files consume order numbers there.
 
 ### Owner decisions to keep in mind
 
@@ -37,8 +40,8 @@ The database holds **no products, orders, or bills**. The only staff account is 
 | Demo-login autofill | `/login` pre-fills the demo logins while `DEMO_ADMIN_EMAIL`/`DEMO_ADMIN_PASSWORD` (and `DEMO_CHEF_*`) are set. **The owner chose to allow this in production.** Anyone who opens the site is then pre-filled as admin on the live database. **Not set anywhere yet.** Delete the variables and redeploy to turn it off; do so before real data goes in. |
 | Secret key | **Not configured.** Copy it from Supabase → Project Settings → API Keys into `web/.env.local` as `SUPABASE_SECRET_KEY`. Without it, Staff & Kitchens is read-only (no creating logins or resetting passwords). Never commit it. |
 | Publishable key and URL | Already in `web/.env.local` (safe for browsers). `web/.env.example` documents all variables. |
-| Hosting | Vercel project `bakery-admin` (team "sandymandycandy's projects"), root `web/`, production at **https://bakery-admin-ten.vercel.app**. Last deployed 2026-10-03 from `main` (commit `be85d89`: Phase 5A kitchen tickets plus review fixes). Deploy with `vercel deploy --prod` from `web/`; **Git integration is not connected**, so pushes do not deploy. `web/vercel.json` pins the Next.js preset (without it the site served only 404s). Production env vars: the Supabase URL and publishable key only. |
-| Version control | GitHub: `sandymandycandy/bakery-admin`. `main` holds all work, including Phase 5A (branches `phase-5a-kitchen-tickets` and `phase-5a-review-fixes` are merged). Secrets (`web/.env.local`, `web/.admin-password.txt`) are git-ignored and must be shared separately. |
+| Hosting | Vercel project `bakery-admin` (team "sandymandycandy's projects"), root `web/`, production at **https://bakery-admin-ten.vercel.app**. Last deployed 2026-10-03 from `main` (commit `be85d89`: Phase 5A kitchen tickets plus review fixes). The branch `claude/exciting-goldberg-09thku` is **not deployed**; its database migrations are already on the live project and only add things, so the deployed `main` keeps working. Deploy with `vercel deploy --prod` from `web/`; **Git integration is not connected**, so pushes do not deploy. `web/vercel.json` pins the Next.js preset (without it the site served only 404s). Production env vars: the Supabase URL and publishable key only. |
+| Version control | GitHub: `sandymandycandy/bakery-admin`. `main` holds all work up to Phase 5A (branches `phase-5a-kitchen-tickets` and `phase-5a-review-fixes` are merged). Branch **`claude/exciting-goldberg-09thku`** adds the 5A review fixes, Phase 5B and the local SQL test runner; merge it through a pull request. Secrets (`web/.env.local`, `web/.admin-password.txt`) are git-ignored and must be shared separately. |
 
 
 ## 3. Running it
@@ -56,6 +59,15 @@ npm run create-admin -- --email you@example.com --name "Your Name" [--role admin
 
 Node 22 is used (22.18+ runs the `.ts` tests directly). There is no Docker, so there is no local Supabase; the app talks to the hosted project.
 
+The SQL rule checks do not need the hosted project. On any PostgreSQL 16+ where you are a superuser:
+
+```bash
+supabase/local/run-tests.sh                  # every check file (or name some: run-tests.sh packing_logic)
+supabase/local/concurrency-kitchen.sh        # two-session lock-order check
+```
+
+`run-tests.sh` builds a scratch database from `supabase/local/shim.sql` (stand-ins for Supabase's `auth` schema and API roles) plus every migration, runs each `supabase/tests/*.sql`, and compares every outcome with the file's `-- expect:` comments. Checks without a machine-checkable expectation (most of `orders_logic` and `billing_logic`) are printed for a person to read.
+
 **If `npm run dev` returns 500 on every page** with a Turbopack panic about `globals.css` (`node process exited … 0xc0000142`), start with `npx next dev --webpack` instead. This happened from a sandboxed agent shell on the owner's machine; it may not affect a normal terminal. Production builds on Vercel are unaffected.
 
 **Next.js 16 is newer than most training data and tutorials.** `web/AGENTS.md` points to the bundled docs in `web/node_modules/next/dist/docs/`. Notable differences: `middleware.ts` is now `src/proxy.ts`; `params`/`searchParams` are Promises; `PageProps<"/route">` and `LayoutProps` are global types generated by `next typegen`. The `react-hooks/purity` lint rule rejects `Date.now()` during render.
@@ -69,7 +81,8 @@ auri bakery/
 ├── la pater/                  original static prototype (reference only; do not modify)
 ├── supabase/
 │   ├── migrations/            schema, in order (applied to the live project)
-│   └── tests/                 SQL rule checks (run in a transaction, then rolled back)
+│   ├── tests/                 SQL rule checks (run in a transaction, then rolled back)
+│   └── local/                 runs the checks on a scratch local PostgreSQL (no Supabase needed)
 └── web/                       Next.js 16 app (App Router, Tailwind v4, zod)
     ├── src/proxy.ts           session refresh; signed-out users → /login
     ├── src/lib/               auth, Supabase clients, money, time zone, orders, kitchen, DB types
@@ -85,10 +98,11 @@ auri bakery/
 
 - **Catalogue, staff, settings, hours, and closures** are written directly through Supabase with row-level security (RLS). Only admins can write.
 - **Orders, payments, bills, credit notes, customers' flags, and kitchen tickets can only be written through Postgres functions.** Staff have **no insert or update grants** on those tables.
-  - Orders and money: `create_order`, `confirm_order`, `reject_order`, `cancel_order`, `reschedule_order`, `update_order_items`, `record_payment`, `apply_discount`, `issue_bill`, `issue_credit_note`, `counter_sale`, `record_no_show`, `undo_no_show`, `set_customer_blocked`.
-  - Kitchen: `acknowledge_ticket`, `start_ticket`, `set_line_ready`, `report_issue`, `resolve_issue`, `acknowledge_stop_work`, `record_ticket_print`.
+  - Orders and money: `create_order`, `confirm_order`, `reject_order`, `cancel_order`, `reschedule_order`, `update_order_items`, `record_payment`, `apply_discount`, `issue_bill`, `issue_credit_note`, `counter_sale`, `record_no_show`, `undo_no_show`, `set_customer_blocked`, and (5B) `mark_packed`, `reopen_packing`, `record_handover`.
+  - Kitchen: `acknowledge_ticket`, `start_ticket`, `set_line_ready`, `report_issue`, `resolve_issue`, `acknowledge_stop_work`, `record_ticket_print`. Read-only: `ticket_stamp` (the chef screen's change check).
 - Order functions check the caller's role, validate everything, take an **idempotency key** where a retry could duplicate, take the order **version** so concurrent edits fail with "conflict", and write an `order_events` timeline row.
 - Kitchen functions take **no version**: each states an end result ("12 ready", "started"), so repeats and double taps change nothing. Admins may act on tickets only as an exception with a reason (at least 5 characters).
+- **Lock order: the order first, then its tickets.** `private.lock_order` locks the order (`for update`); chef actions go through `private.lock_ticket`, which locks the order (`for no key update`) before the ticket, and `private.kitchen_guard` locks the order's tickets before it checks them. Keep this order in new functions, or an admin edit and a chef tap on the same order can deadlock (`supabase/local/concurrency-kitchen.sh` reproduces it without the fix).
 - The functions are `SECURITY DEFINER` in `public`. The Supabase advisor warns about this; it is intentional (they are the only write path and each checks the role). Helpers live in the unexposed `private` schema.
 - Errors use `private.fail(message, kind)`. The message is written for staff; `kind` travels in the Postgres `hint` field (`slot`, `lead_time`, `capacity`, `conflict`, `forbidden`, `unmapped`, `billed`, `blocked`, `unavailable`, `kitchen`, …). `web/src/lib/orders.ts → rpcError` maps them; `slot`, `lead_time`, `blocked` and `capacity` show the shared `OverridePrompt`, where admins retry with a reason. `kitchen` is deliberately not overridable.
 - Every table has an audit trigger (`audit_events`: who, what, before, after).
@@ -107,29 +121,33 @@ auri bakery/
 
 Files in `supabase/migrations/` were applied to the live project in order through the Supabase MCP server. The CLI is not linked. To continue:
 
-- Install the Supabase CLI and run `supabase link --project-ref hljkydruionasnouyrpu`. Check that the remote migration history matches the files (names: `foundation`, `orders`, `billing`, `bill_gst_split_per_rate`, `bill_gst_split_integer_division`, `counter_sale_precheck`, `capacity`, `capacity_enforcement`, `capacity_review_fixes`, `no_shows`, `edit_order_items`, `kitchen_tickets`).
+- Install the Supabase CLI and run `supabase link --project-ref hljkydruionasnouyrpu`. Check that the remote migration history matches the files (names: `foundation`, `orders`, `billing`, `bill_gst_split_per_rate`, `bill_gst_split_integer_division`, `counter_sale_precheck`, `capacity`, `capacity_enforcement`, `capacity_review_fixes`, `no_shows`, `edit_order_items`, `kitchen_tickets`, `kitchen_review_fixes`, `packing_handover`).
   - The last GST-split fix was applied as `bill_gst_split_integer_division`, but its file is `20260927000310_bill_gst_split_per_rate.sql` (the file already contains the fixed version). Reconcile the history names when linking.
 - New tables in `public` get full API access by default in Supabase. Every migration so far **revokes** that and grants only what is needed; keep doing this, and enable RLS on every table.
 - When a migration replaces an existing function, copy its **latest** definition (later migrations redefine `confirm_locked`, `reschedule_order`, `cancel_order`, `update_order_items`) and change only what you need.
 - After schema changes, update `web/src/lib/database.types.ts`. It was condensed by hand from generated output (write-only-by-function tables are `Insert: never`); later tables and functions were added by hand in the same shape. Replacing it with fully generated types is fine.
-- Run the security and performance advisors after each migration. Expected findings today: `authenticated_security_definer_function_executable` (intentional), unused indexes (empty database), `document_sequences` with no policy (intentional), leaked-password protection off (turn it on).
+- Run the security and performance advisors after each migration. Expected findings today (checked 2026-10-03): `authenticated_security_definer_function_executable` for the 27 public write functions (intentional), unused indexes (empty database), `document_sequences` with no policy (intentional), leaked-password protection off (turn it on).
+- **Applying through the Supabase MCP connector:** `apply_migration` waits for an interactive confirmation on destructive statements such as `DROP FUNCTION` and times out when nobody answers. Write migrations without drops (replace instead, as `20261003000100` does for `sync_ticket`), or apply them in the SQL editor.
+- **Live project vs the migration files (checked 2026-10-03 by digest):** tables, columns, constraints, indexes, policies, grants, triggers, views and 62 of 71 functions are byte-identical. The other 9 (`build_tickets`, `confirm_locked`, `issue_bill_locked`, `recalc_order_totals`, `cancel_order`, `counter_sale`, `report_issue`, `reschedule_order`, `update_order_items`) differ only in SQL comments, which were left out when they were applied. Nothing to do; a later migration that replaces them brings the comments back.
 
 ## 5. Tests
 
 | Test | How to run | Last result |
 |---|---|---|
-| `supabase/tests/rls_foundation.sql` | SQL editor | 13/13 |
-| `supabase/tests/orders_logic.sql` | SQL editor | 22/22 (rerun 2026-10-03 with 5A: unchanged) |
-| `supabase/tests/billing_logic.sql` | SQL editor | all pass (rerun 2026-10-03 with 5A: unchanged) |
-| `supabase/tests/capacity_logic.sql` | SQL editor | 29/29 (rerun 2026-10-03 with 5A: unchanged) |
-| `supabase/tests/no_show_logic.sql` | SQL editor | 26/26 (2026-09-30). Orders from 990001. |
-| `supabase/tests/edit_items_logic.sql` | SQL editor | 21/21 (rerun 2026-10-03 with 5A: unchanged). Orders from 990101. |
-| `supabase/tests/kitchen_logic.sql` | SQL editor | 44/44 (2026-10-03, against the applied schema): access per kitchen, ticket building, chef actions, ready counts and corrections, issues, prints, edits/reschedules while New and refused after acknowledgement, cancel → stop-work. Orders from 990201. |
-| `web/src/lib/capacity.test.ts`, `web/src/lib/kitchen.test.ts` | `npm test` | 7/7: pickup-window matching, and the chef queue's day grouping and ordering |
+| `supabase/tests/rls_foundation.sql` | `supabase/local/run-tests.sh` | 11/11 (2026-10-03; the file has 11 checks, which the earlier "13/13" did not match) |
+| `supabase/tests/orders_logic.sql` | same | 22/22 (2026-10-03): 6 machine-checked, 16 read and identical to the run before the 2026-10-03 migrations except the time-of-day message noted below |
+| `supabase/tests/billing_logic.sql` | same | 21/21 (2026-10-03): 9 machine-checked, 12 read and identical |
+| `supabase/tests/capacity_logic.sql` | same | 29/29 (2026-10-03): 28 machine-checked, 1 read |
+| `supabase/tests/no_show_logic.sql` | same | 26/26 (2026-10-03). Orders from 990001. |
+| `supabase/tests/edit_items_logic.sql` | same | 21/21 (2026-10-03). Orders from 990101. |
+| `supabase/tests/kitchen_logic.sql` | same | 48/48 (2026-10-03): access per kitchen, ticket building, chef actions, ready counts and corrections, issues, prints, edits/reschedules while New and refused after acknowledgement, cancel → stop-work, and F1–F4 for the review fixes. Orders from 990201. |
+| `supabase/tests/packing_logic.sql` | same | 22/22 (2026-10-03, Phase 5B): packing refusals, ready-stock-only packing, retries, balance check and credit handover, bill at handover, reopen. Orders from 990301. |
+| `supabase/local/concurrency-kitchen.sh` | run it | PASS (2026-10-03). With `EXCLUDE=20261003000100` (the fix left out) it reports the deadlock it guards against. |
+| `web/src/lib/capacity.test.ts`, `web/src/lib/kitchen.test.ts` | `npm test` | 17/17: pickup-window matching, the chef queue's grouping and ordering, action follow-up, the stamp poller and sign-out detection |
 | `web/scripts/e2e/orders-4a.mjs` | Build, `npm start -- -p 3100`, create QA users (`supabase/tests/qa_users.sql`), then `QA_PW=... npm run e2e:orders` | 29/29 (Phase 4A) |
 | `web/scripts/e2e/billing-4b.mjs` | Same setup, `npm run e2e:billing` | 17/19; the 2 failures are test-script issues (assertions depend on leftover data). Fix before relying on it. |
 
-**Running SQL tests through the Supabase MCP tool or any client that returns only the last result:** replace the file's last two lines (`select … from r …; rollback;`) with
+**Prefer the local runner (section 3).** The 2026-10-03 results above come from it; the live project was compared with the migration files separately (section 4). **If you run SQL tests on the live project** through the Supabase MCP tool or any client that returns only the last result: replace the file's last two lines (`select … from r …; rollback;`) with
 `do $$ begin raise exception E'RESULTS\n%', (select string_agg(check_name || ' => ' || coalesce(outcome,'NULL'), E'\n' order by n) from r); end $$;`
 The error message then lists every check, and the exception rolls everything back. In the SQL editor, run the file as is. Compare each outcome with the `-- expect:` comment above it.
 
@@ -150,41 +168,38 @@ Caveats:
 | Counter staff can confirm in-store orders; only admins confirm call orders, reject, cancel, reschedule, refund, issue credit notes, or resolve kitchen issues | Migrations (role checks in functions) |
 | Counter staff can see and print kitchen tickets but not act on them | `private.ticket_actor` |
 | Pickup only; manual payment recording; no stock counts (confirmed by the owner 2026-10-02) | PRD section 2 |
+| 5B: counter staff can pack and hand over orders (PRD: "Admin or permitted Counter Staff") | `mark_packed`, `record_handover` (migration `20261003000200`) |
+| 5B: handing over with a balance due needs an admin and a credit reason (AC-10); a refund due does not block handover | `record_handover` |
+| 5B: handover issues the GST bill when the order has none (PRD 5F: every completed sale gets a bill) | `record_handover` |
+| 5B: an open kitchen issue blocks packing; packing has no override (an admin acts on the ticket instead) | `mark_packed` |
+| 5B: only an admin can reopen a packed order, with a reason; it returns to Preparing (Confirmed when there are no kitchen tickets) | `reopen_packing` |
 
 Business decisions still needed are listed in PRD section 14 and TODO Phase 0. The most urgent are: GSTIN/FSSAI/tax rates (check with the accountant), the real product list with kitchen mapping, opening hours, and the notification channel.
 
 ## 7. Known gaps and risks
 
 - **No browser click-through yet.** Print layouts have not been checked on a real 80mm printer.
-- **No staging environment.** The production deployment and all test runs use the only (live) Supabase project.
+- **No staging environment.** The production deployment uses the only (live) Supabase project. SQL logic can now be tested locally (section 3); the app itself still only runs against the live project.
 - If the demo-login variables are ever set on Vercel, the public site pre-fills an admin login for the live database (owner's choice). Remove them before real orders exist.
-- **Orders cannot be completed in the app yet.** Kitchen work ends with "All kitchen items ready"; packing, Ready and handover/Completed arrive in 5B.
+- Packing is one confirmation per order. The itemized checklist (cake wording, accessories, packaging) and recipient checks are Release 1.1 (PRD 5D).
+- Handover issues a GST bill when the order has none, which uses a bill number for good. Do not hand over test orders on the live project.
 - **Edits after the kitchen acknowledges are refused** (5A holding measure); 5C must add kitchen-acknowledged revisions and preserve prepared quantities.
-- The chef screen refreshes every 10 seconds by polling `GET /kitchen/stamp` (8 s timeout, one request at a time), not Supabase Realtime. A tap that fails on the network shows "Not saved" and switches the header to Offline without reloading the page.
+- The chef screen refreshes every 10 seconds by polling `GET /kitchen/stamp` (8 s timeout, one request at a time), which calls `public.ticket_stamp()`; not Supabase Realtime. A tap that fails on the network shows "Not saved" and switches the header to Offline without reloading the page. A lost or deactivated session sends the chef to `/login`.
 - Placeholder pages: Reports.
 - Not built yet: chef PIN sign-in on tablets (AC-34, now 5D).
 - `next start` warns about `outputFileTracingRoot` (multiple lockfiles on the machine). Harmless locally.
 - The Supabase free plan allows two active projects, and the owner already has one other active project. A staging project may require pausing a project or upgrading.
 - Leaked-password protection is off (Supabase → Auth → Password security).
-- **Minor items from the 5A review, not yet fixed** (low impact; pick up during 5B/5C):
-  - `kitchen_guard` reads tickets without row locks: a chef acknowledging at the same moment as an admin edit can be reset to New; the opposite lock order of `start_ticket` and the edit path can deadlock (a retry works). Lock the order's tickets in `kitchen_guard`, and lock the order before the ticket in `start_ticket_locked`.
-  - The change stamp uses transaction-start `now()`; a long transaction committing late may not move it until the next change. `count: "exact"` over all tickets grows with history.
-  - A deactivated chef or lost session shows Offline forever instead of going to `/login` (the stamp route returns 401).
-  - "Not saved" can be wrong if the connection dropped after the server committed; the next refresh corrects the screen.
-  - `/admin/kot` default (Open, today) hides open tickets from earlier days.
-  - Part ready Save is not disabled for an admin without a reason (the server refuses it with a message).
-  - Cancelled tickets have no Print button in the order page Kitchen card.
-  - `ResolveIssueForm` has no try/catch around its action.
-  - The `ticket_ready` timeline event omits the admin's reason.
+- **Minor items from the 5A review: fixed on 2026-10-03** (section 12), except one accepted limit: "Not saved" can be wrong if the connection dropped after the server committed; the next refresh corrects the screen.
 
 ## 8. Suggested order of work
 
-1. Add the secret key, create the demo chef, assign kitchens, reset `order_number_seq` to 1001, and add a few test products with kitchen mappings.
-2. **Walk through every screen in a browser** (admin, counter, chef on a tablet-sized window, prints), ideally against a staging project, and fix what you find. Consider Playwright.
-3. Phase 5B: packing and handover (one packing confirmation per order → Ready; one-time handover → Completed, with the balance check; no stock allocation).
-4. Phase 5C: kitchen revisions after acknowledgement (replaces the holding measure in `update_order_items`/`reschedule_order`; see section 11).
-5. Phase 5D: chef PIN sign-in on registered tablets.
-6. Notification templates once the owner picks the channel; Reports (Phase 7); public website (Phase 6) when the owner is ready.
+1. **Merge the branch.** Open a pull request from `claude/exciting-goldberg-09thku` into `main`, review it (confirm the 5B defaults in section 6), merge, and deploy with `vercel deploy --prod` from `web/`. The live database already has its migrations.
+2. Add the secret key, create the demo chef, assign kitchens, and add a few test products with kitchen mappings. (The order sequence is already reset to 1001.)
+3. **Walk through every screen in a browser** (admin, counter, chef on a tablet-sized window, prints, and now packing and handover), ideally against a staging project, and fix what you find. Consider Playwright.
+4. Phase 5C: kitchen revisions after acknowledgement (replaces the holding measure in `update_order_items`/`reschedule_order`; see section 11). When an order changes after packing, reopen packing (PRD: changes invalidate packing checks).
+5. Phase 5D: chef PIN sign-in on registered tablets (needs the secret key on the server).
+6. Notification templates once the owner picks the channel (PRD 5F proposes WhatsApp click-to-chat links); Reports (Phase 7, AC-35); public website (Phase 6) when the owner is ready.
 
 ## 9. Customer blocking and no-shows (built 2026-09-30)
 
@@ -217,11 +232,31 @@ Spec `docs/superpowers/specs/2026-09-30-kitchen-tickets-design.md`; plan `docs/s
 - **Access:** `private.can_see_kitchen` — admin and counter see all; chefs only their `staff_kitchens`.
 - **When tickets are made:** in `private.confirm_locked` (both confirm paths). Ready-stock lines and counter sales get none. `private.build_tickets` rebuilds tickets when a confirmed order is edited or rescheduled **while every ticket is New** (revision + 1 only for tickets that changed; a kitchen that drops out gets a stop-work ticket that keeps its lines). Once any ticket is past New, `private.kitchen_guard` refuses edits and reschedules with kind `kitchen`.
 - **Cancelling** an order cancels its tickets and raises a stop-work notice until a chef acknowledges it. Ready counts stay as a record.
-- **Order status:** Confirmed → Preparing when any ticket starts. When every ticket is ready the order **stays Preparing** with an "All kitchen items ready" badge; Ready is set by packing in 5B.
+- **Order status:** Confirmed → Preparing when any ticket starts. When every ticket is ready the order **stays Preparing** with an "All kitchen items ready" badge; packing then sets Ready (5B, section 13).
 - **Screens:**
   - Chef screen `/kitchen`: Today / Tomorrow / Later, overdue first, source filter, kitchen switch, one-tap Ready, Part ready, Report issue, Print, stop-work notices, "Updated N s ago" / Offline banner.
   - `/admin/kot`: open issues with Resolve, stop-work list, tickets by day/kitchen/source/status.
   - Order page Kitchen card; kitchen badges in order lists and the calendar.
   - `/print/kot/[id]`: 80mm, COPY on reprints.
-- **Refresh:** the chef screen polls a change stamp (`ticketStamp`: count + latest `updated_at`) every 10 seconds and reloads only when it changed. Every ticket write touches `updated_at`.
+- **Refresh:** the chef screen polls a change stamp every 10 seconds and reloads only when it changed. Since 2026-10-03 the stamp is `public.ticket_stamp()`: a digest of the `updated_at` values of the tickets that can be on screen (still being worked on, or touched in the last two days), scoped to the chef's kitchens by row-level security. Every ticket write touches `updated_at`.
 - **5C must change** `update_order_items` and `reschedule_order`: replace the `kitchen_guard` refusal with kitchen-acknowledged revisions, preserve prepared quantities, and reduce released lines via `cancelled_quantity` instead of deleting order lines.
+
+## 12. Kitchen review fixes (built 2026-10-03)
+
+Migration `20261003000100_kitchen_review_fixes.sql` (applied as `kitchen_review_fixes`); web commit `c8180e8`, SQL commit `79f28e8`.
+
+- **One lock order** (order, then ticket): `lock_ticket` locks the order first; `kitchen_guard` locks the tickets it checks; `resolve_issue` goes through `lock_ticket`. Before this, an admin edit and a chef starting the same order's ticket deadlocked (reproduced and now passing in `supabase/local/concurrency-kitchen.sh`).
+- The "Kitchen ticket ready" timeline entry carries the admin's reason when an admin acts as the kitchen (`sync_ticket(uuid, text)`; the one-argument form stays and forwards).
+- `public.ticket_stamp()` replaces the count + newest `updated_at` stamp (which could miss a late commit and counted all history).
+- Web: the chef screen goes to `/login` when the session is gone (401, or the proxy's redirect) instead of showing Offline forever; `/admin/kot` "Open" on today includes open tickets from earlier days; Part ready "Save" needs an admin's reason; cancelled tickets can be printed; the Resolve form catches network errors.
+
+## 13. Packing and handover (Phase 5B, built 2026-10-03)
+
+Spec `docs/superpowers/specs/2026-10-03-packing-handover-design.md`; migration `20261003000200_packing_handover.sql` (applied as `packing_handover`); commit `7399343`.
+
+- **Columns on `orders`:** `packed_at`, `packed_by`, `packing_note`, `handed_over_by`, `collected_by`, `credit_reason` (`completed_at` already existed). `order_summaries` does not have them; read them from `orders`.
+- **`mark_packed(order, version, note)`** (admin, counter): Confirmed or Preparing orders whose live kitchen tickets are all Ready and with no open kitchen issue → **Ready**. Ready-stock-only orders pack straight from Confirmed. Packing a Ready order again changes nothing.
+- **`record_handover(order, version, collected_by, credit_reason)`** (admin, counter): Ready orders → **Completed**. A balance due is refused with kind `balance`; an admin retries with a credit reason through the shared `OverridePrompt` ("Hand over on credit"), and the balance at handover is recorded. Issues the GST bill if there is none. Handing over again changes nothing (AC-22).
+- **`reopen_packing(order, version, reason)`** (admin): Ready → Preparing (Confirmed without kitchen tickets), packing record cleared, timeline keeps it.
+- **Screens:** order page "Packing & handover" card (what is still missing, Mark packed, handover form with the balance, Reopen); Home "Ready for pickup" list with late collections; timeline entries Packed, Packing reopened, Handed over.
+- **Not done (Release 1.1):** itemized checklist, recipient verification, partial collection, late/uncollected workflow beyond the Home list.

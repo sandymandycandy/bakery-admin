@@ -1,20 +1,21 @@
 # Bakery Project — To-do List
 
-Status (2026-10-03): Phases 3, 4A and 4B are built and tested. Phase 4C is done except notification templates (waiting for the owner's channel decision). Everything up to item editing is on `main` and deployed (https://bakery-admin-ten.vercel.app). **Phase 5A (kitchen tickets) is built, reviewed and deployed (2026-10-03).** No browser click-through yet. **Next: set up test data, click through every screen, then 5B (packing and handover).** Owner decision 2026-10-02: no stock or inventory tracking. See HANDOVER.md for setup, architecture, and known gaps.
+Status (2026-10-03): Phases 3, 4A and 4B are built and tested. Phase 4C is done except notification templates (waiting for the owner's channel decision). Phase 5A (kitchen tickets) is built, reviewed and deployed from `main`. **On branch `claude/exciting-goldberg-09thku` (pushed, not merged, not deployed): the 5A review fixes and Phase 5B packing and handover**; their database migrations are applied to the live project. No browser click-through yet. **Next: merge the branch, set up test data, click through every screen, then 5C (kitchen revisions).** Owner decision 2026-10-02: no stock or inventory tracking. See HANDOVER.md for setup, architecture, and known gaps.
 Checkboxes represent actual completion, not intentions.
 
 ## Start here — next developer
 
 1. [ ] Read [HANDOVER.md](HANDOVER.md), then PRD sections 5F, 7, 10A, and 14A.
-2. [ ] Get access to the Supabase project `auri-bakery` (ask the owner to invite you) and add `SUPABASE_SECRET_KEY` to `web/.env.local`.
-3. [x] Code is on GitHub: `sandymandycandy/bakery-admin` (branch `main`). Clone it; get `web/.env.local` values from the owner.
-4. [ ] Run the app locally and click through every admin screen in a browser (never done yet — only HTTP-level tests so far).
-5. [ ] Create a staging Supabase project so tests can create bills without consuming the live bill sequence.
-6. [ ] Enable Leaked Password Protection (Supabase → Auth → Password security).
-7. [x] Merge Phase 5A into `main` and deploy (done 2026-10-03).
-8. [ ] Decide about demo-login autofill on the live site (`DEMO_*` variables; not set yet). Remove them before real data goes in (HANDOVER section 2).
-9. [ ] Create the demo chef login (`npm run create-admin -- … --role chef`; needs the secret key) and assign it to kitchens; `/kitchen` needs it.
-10. [ ] While no real orders exist, reset the order sequence: `alter sequence public.order_number_seq restart with 1001` (test runs moved it to 1076).
+2. [ ] Open a pull request from `claude/exciting-goldberg-09thku` into `main` (5A review fixes, Phase 5B, local SQL test runner). Confirm the 5B defaults (HANDOVER section 6), merge, then deploy (`vercel deploy --prod` from `web/`). The live database already has the migrations.
+3. [ ] Get access to the Supabase project `auri-bakery` (ask the owner to invite you) and add `SUPABASE_SECRET_KEY` to `web/.env.local`.
+4. [x] Code is on GitHub: `sandymandycandy/bakery-admin` (branch `main`). Clone it; get `web/.env.local` values from the owner.
+5. [ ] Run the app locally and click through every admin screen in a browser (never done yet — only HTTP-level tests so far).
+6. [ ] Create a staging Supabase project so tests can create bills without consuming the live bill sequence. (The SQL checks already run without one: `supabase/local/run-tests.sh`, HANDOVER section 3.)
+7. [ ] Enable Leaked Password Protection (Supabase → Auth → Password security).
+8. [x] Merge Phase 5A into `main` and deploy (done 2026-10-03).
+9. [ ] Decide about demo-login autofill on the live site (`DEMO_*` variables; not set yet). Remove them before real data goes in (HANDOVER section 2).
+10. [ ] Create the demo chef login (`npm run create-admin -- … --role chef`; needs the secret key) and assign it to kitchens; `/kitchen` needs it.
+11. [x] While no real orders exist, reset the order sequence (done 2026-10-03: the first real order will be B-1001). Run SQL tests locally from now on so it stays there.
 
 ## Phase 0 — Planning and business decisions
 
@@ -129,7 +130,7 @@ Depends on: Phase 3.
 - [ ] Implement notification templates, sent-records, and the pending-order alert (AC-31).
 - [x] Verify AC-01, AC-07, AC-11, AC-17, AC-18, AC-19 (22 SQL checks in `supabase/tests/orders_logic.sql`, 29 end-to-end checks, 2026-09-27).
 - [x] Verify AC-28 and AC-29 (billing SQL checks in `supabase/tests/billing_logic.sql`; HTTP checks of all rejection paths, 2026-09-27). Success paths were not run over HTTP to avoid consuming real bill numbers.
-- [ ] Verify AC-10 (needs handover, Phase 5), AC-32, and AC-36 once 4C lands.
+- [ ] Verify AC-32 and AC-36 in a browser. AC-10 (balance before handover) is covered at SQL level by `supabase/tests/packing_logic.sql` (H1–H7, 2026-10-03); its browser check is still to do.
 - [ ] Set up a staging Supabase project so end-to-end tests can create real bills without touching the live bill sequence (see Start here).
 
 ### Phase 4C — done except notification templates
@@ -154,14 +155,15 @@ Depends on: confirmed orders from Phase 4. Split into 5A (kitchen tickets, built
 - [x] Implement chef queues, source filters, kitchen switch, and ticket detail (5A, `/kitchen`).
 - [x] Implement acknowledgement, preparation, partial quantities, readiness, and issue reporting (5A).
 - [x] Derive aggregate readiness ("All kitchen items ready"; order stays Preparing until packing) (5A).
-- [ ] Implement basic packing confirmation with packer attribution and one-time handover recording (AC-22, basic part) (5B). No stock allocation (owner decision 2026-10-02).
+- [x] Implement basic packing confirmation with packer attribution and one-time handover recording (AC-22, basic part) (5B, 2026-10-03; `supabase/tests/packing_logic.sql` 22/22; HANDOVER section 13). No stock allocation (owner decision 2026-10-02). On the branch: not merged or deployed yet; defaults await the owner (HANDOVER section 6).
+- [x] Fix the minor items from the 5A review: lock order, locked kitchen guard, change stamp, sign-out detection, KOT overdue tickets, and the small UI items (2026-10-03; HANDOVER section 12; `supabase/local/concurrency-kitchen.sh`).
 - [x] Cancellation acknowledgements (stop-work notices) (5A).
 - [ ] Implement revisions to acknowledged work, preserved prepared quantities, and controlled kitchen reassignment (5C). Until then edits are refused once a kitchen acknowledges.
 - [x] Live updates and connectivity state: 10-second change stamp with Updated/Offline indicator (5A). Supabase Realtime deferred.
 - [x] Implement KOT browser print/reprint (80mm) preserving ticket identity and revision; reprints say COPY (5A).
 - [x] Show eggless/veg marks prominently on KOT lines (AC-33) (5A).
 - [ ] Chef PIN sign-in on registered tablets (AC-34) (5D).
-- [ ] Browser click-through of the chef screen, KOT page, kitchen card and print on a tablet-sized window.
+- [ ] Browser click-through of the chef screen, KOT page, kitchen card, print on a tablet-sized window, and the packing and handover card.
 - [ ] Verify AC-02 through AC-05, AC-08, AC-09, AC-12 through AC-14, AC-16, and AC-33.
 
 Exit: two kitchen users can complete a mixed order without duplicated work or premature readiness.
@@ -188,7 +190,7 @@ Exit: a customer can follow the chosen ordering process, and staff can fulfill t
 
 Depends on: Phases 4–6, adjusted for chosen public scope.
 
-- [ ] Add kitchen workload and remaining alerts to Home. Due today, awaiting confirmation, overdue, balance due, next-7-days, missing-routing alert, and setup checklist are done.
+- [ ] Add kitchen workload and remaining alerts to Home. Due today, awaiting confirmation, overdue, balance due, next-7-days, ready for pickup with late collections (5B), missing-routing alert, and setup checklist are done.
 - [ ] Validate dashboard counts and dates against underlying order records.
 - [ ] Implement the daily sales report with CSV export (AC-35).
 - [ ] Complete settings and staff-management screens.
