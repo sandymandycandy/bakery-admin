@@ -27,6 +27,16 @@ export async function acknowledgeTicketAction(ticketId: string, reason?: string)
   return { ok: true };
 }
 
+export async function acknowledgeTicketChangesAction(ticketId: string, reason?: string): Promise<Result> {
+  await assertRole(["chef", "admin"]);
+  if (!uuid.safeParse(ticketId).success) return { message: "Invalid ticket." };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("acknowledge_ticket_changes", { p_ticket_id: ticketId, p_reason: reasonArg(reason) });
+  if (error) return rpcError(error);
+  afterTicketChange();
+  return { ok: true };
+}
+
 export async function startTicketAction(ticketId: string, reason?: string): Promise<Result> {
   await assertRole(["chef", "admin"]);
   if (!uuid.safeParse(ticketId).success) return { message: "Invalid ticket." };

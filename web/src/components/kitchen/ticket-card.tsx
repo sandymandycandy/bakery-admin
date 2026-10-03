@@ -10,6 +10,7 @@ import {
   ADMIN_KITCHEN_REASON_MIN,
   KITCHEN_OFFLINE_EVENT,
   actionFollowUp,
+  describeChange,
   issueKindLabel,
   ticketStatusLabel,
   ticketStatusTone,
@@ -19,6 +20,7 @@ import {
 import {
   acknowledgeStopWorkAction,
   acknowledgeTicketAction,
+  acknowledgeTicketChangesAction,
   recordTicketPrintAction,
   reportIssueAction,
   setLineReadyAction,
@@ -97,6 +99,7 @@ export function TicketCard({
   const canAct = mode === "chef" || (mode === "admin" && reason.trim().length >= ADMIN_KITCHEN_REASON_MIN);
   const adminReason = mode === "admin" ? reason.trim() : undefined;
   const openIssues = ticket.issues.filter((i) => !i.resolved_at);
+  const changes = open ? ticket.pending_changes : [];
 
   return (
     <article className={cx("rounded-xl border bg-surface p-4", overdue ? "border-2 border-danger" : "border-line")}>
@@ -122,79 +125,108 @@ export function TicketCard({
         </div>
       </header>
 
-      {mode === "admin" && working && <AdminReason id={ticket.id} value={reason} onChange={setReason} />}
+      {changes.length > 0 && (
+        <div role="alert" className="mt-3 rounded-lg border-2 border-warn bg-warn-soft p-3">
+          <p className="text-lg font-bold">Changed · revision {ticket.revision}</p>
+          <ul className="mt-1 list-disc pl-5 text-base">
+            {changes.map((c) => (
+              <li key={c.key}>{describeChange(c, (iso) => formatDateTime(iso, tz))}</li>
+            ))}
+          </ul>
+          {mode !== "view" && (
+            <Button
+              className="mt-3 px-5 py-3 text-base"
+              disabled={pending || !canAct}
+              onClick={() => run(() => acknowledgeTicketChangesAction(ticket.id, adminReason))}
+            >
+              {pending ? "Saving…" : "Acknowledge changes"}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {mode === "admin" && (working || changes.length > 0) && <AdminReason id={ticket.id} value={reason} onChange={setReason} />}
 
       <ul className="mt-3 divide-y divide-line">
-        {ticket.lines.map((l) => (
-          <li key={l.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-            <div className="min-w-0">
-              <p className="text-lg font-semibold">
-                <span className="mr-2 text-2xl tabular-nums">{l.quantity}×</span>
+        {ticket.lines.map((l) =>
+          l.status === "cancelled" && open ? (
+            <li key={l.id} className="py-3 text-lg text-muted">
+              <span className="line-through">
                 {l.product_name} — {l.variant_name}
-              </p>
-              <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
-                <VegMark isVeg={l.is_veg} />
-                {l.is_eggless ? <Badge tone="ok">Eggless</Badge> : l.contains_egg && <Badge tone="warn">Contains egg</Badge>}
-                {l.allergens.length > 0 && <span className="font-medium text-danger">Allergens: {l.allergens.join(", ")}</span>}
+              </span>{" "}
+              <Badge tone="danger">Removed</Badge>
+            </li>
+          ) : (
+            <li key={l.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+              <div className="min-w-0">
+                <p className="text-lg font-semibold">
+                  <span className="mr-2 text-2xl tabular-nums">{l.quantity}×</span>
+                  {l.product_name} — {l.variant_name}
+                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+                  <VegMark isVeg={l.is_veg} />
+                  {l.is_eggless ? <Badge tone="ok">Eggless</Badge> : l.contains_egg && <Badge tone="warn">Contains egg</Badge>}
+                  {l.allergens.length > 0 && <span className="font-medium text-danger">Allergens: {l.allergens.join(", ")}</span>}
+                </div>
+                {l.notes && <p className="mt-2 rounded-lg bg-warn-soft px-3 py-2 text-base font-medium">“{l.notes}”</p>}
               </div>
-              {l.notes && <p className="mt-2 rounded-lg bg-warn-soft px-3 py-2 text-base font-medium">“{l.notes}”</p>}
-            </div>
-            <div className="flex flex-col items-end gap-2">
-              <span className={cx("text-sm tabular-nums", l.ready_quantity === l.quantity ? "font-semibold text-ok" : "text-muted")}>
-                {l.ready_quantity}/{l.quantity} ready
-              </span>
-              {working && mode !== "view" && (
-                <div className="flex gap-2">
-                  {l.ready_quantity < l.quantity && (
+              <div className="flex flex-col items-end gap-2">
+                <span className={cx("text-sm tabular-nums", l.ready_quantity === l.quantity ? "font-semibold text-ok" : "text-muted")}>
+                  {l.ready_quantity}/{l.quantity} ready
+                </span>
+                {working && mode !== "view" && (
+                  <div className="flex gap-2">
+                    {l.ready_quantity < l.quantity && (
+                      <Button
+                        className="px-5 py-3 text-base"
+                        disabled={pending || !canAct}
+                        onClick={() => run(() => setLineReadyAction(l.id, l.quantity, adminReason))}
+                      >
+                        Ready
+                      </Button>
+                    )}
                     <Button
-                      className="px-5 py-3 text-base"
+                      variant="secondary"
+                      className="py-3"
                       disabled={pending || !canAct}
-                      onClick={() => run(() => setLineReadyAction(l.id, l.quantity, adminReason))}
+                      onClick={() => {
+                        setPartLine(partLine === l.id ? null : l.id);
+                        setPartCount(String(l.ready_quantity));
+                      }}
                     >
-                      Ready
+                      Part ready
                     </Button>
-                  )}
-                  <Button
-                    variant="secondary"
-                    className="py-3"
-                    disabled={pending || !canAct}
-                    onClick={() => {
-                      setPartLine(partLine === l.id ? null : l.id);
-                      setPartCount(String(l.ready_quantity));
+                  </div>
+                )}
+                {partLine === l.id && (
+                  <form
+                    className="flex items-center gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!canAct) return;
+                      run(() => setLineReadyAction(l.id, Number(partCount), adminReason), () => setPartLine(null));
                     }}
                   >
-                    Part ready
-                  </Button>
-                </div>
-              )}
-              {partLine === l.id && (
-                <form
-                  className="flex items-center gap-2"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!canAct) return;
-                    run(() => setLineReadyAction(l.id, Number(partCount), adminReason), () => setPartLine(null));
-                  }}
-                >
-                  <label htmlFor={`part-${l.id}`} className="text-sm">
-                    Ready
-                  </label>
-                  <Input
-                    id={`part-${l.id}`}
-                    inputMode="numeric"
-                    className="w-20 text-center text-base"
-                    value={partCount}
-                    onChange={(e) => setPartCount(e.target.value.replace(/\D/g, ""))}
-                  />
-                  <span className="text-sm text-muted">of {l.quantity}</span>
-                  <Button type="submit" variant="secondary" disabled={pending || !canAct || partCount === ""}>
-                    Save
-                  </Button>
-                </form>
-              )}
-            </div>
-          </li>
-        ))}
+                    <label htmlFor={`part-${l.id}`} className="text-sm">
+                      Ready
+                    </label>
+                    <Input
+                      id={`part-${l.id}`}
+                      inputMode="numeric"
+                      className="w-20 text-center text-base"
+                      value={partCount}
+                      onChange={(e) => setPartCount(e.target.value.replace(/\D/g, ""))}
+                    />
+                    <span className="text-sm text-muted">of {l.quantity}</span>
+                    <Button type="submit" variant="secondary" disabled={pending || !canAct || partCount === ""}>
+                      Save
+                    </Button>
+                  </form>
+                )}
+              </div>
+            </li>
+          ),
+        )}
       </ul>
 
       {openIssues.length > 0 && (
@@ -267,7 +299,7 @@ function IssueForm({ ticket, onDone }: { ticket: KitchenTicket; onDone: () => vo
         <Field label="Item" htmlFor={`line-${ticket.id}`}>
           <Select id={`line-${ticket.id}`} value={lineId} onChange={(e) => setLineId(e.target.value)}>
             <option value="">Whole ticket</option>
-            {ticket.lines.map((l) => (
+            {ticket.lines.filter((l) => l.status !== "cancelled").map((l) => (
               <option key={l.id} value={l.id}>
                 {l.product_name} — {l.variant_name}
               </option>
