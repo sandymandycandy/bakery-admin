@@ -46,7 +46,10 @@ export default async function KitchenPage({ searchParams }: PageProps<"/kitchen"
   const since = zonedDayRange(todayKey, tz).start.toISOString();
 
   const supabase = await createClient();
-  let active = ticketsQuery(supabase).in("status", ["new", "acknowledged", "preparing"]);
+  // Ready tickets stay on Active while the kitchen has not acknowledged a change to them (5C).
+  let active = ticketsQuery(supabase)
+    .neq("status", "cancelled")
+    .or("status.in.(new,acknowledged,preparing),has_pending_changes.is.true");
   let stops = ticketsQuery(supabase).eq("status", "cancelled").is("stop_work_acknowledged_at", null).order("cancelled_at");
   let done = ticketsQuery(supabase)
     .or(`and(status.eq.ready,ready_at.gte."${since}"),and(status.eq.cancelled,stop_work_acknowledged_at.gte."${since}")`)

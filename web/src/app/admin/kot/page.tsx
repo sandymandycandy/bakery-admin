@@ -46,7 +46,7 @@ export default async function KotPage({ searchParams }: PageProps<"/admin/kot">)
   if (status === "open") query = query.in("status", ["new", "acknowledged", "preparing"]);
   else if (status !== "all") query = query.eq("status", status);
 
-  const [{ data: rows, error }, { data: kitchens }, { data: issues }, { data: stopRows }] = await Promise.all([
+  const [{ data: rows, error }, { data: kitchens }, { data: issues }, { data: stopRows }, { data: changedRows }] = await Promise.all([
     query,
     supabase.from("kitchens").select("id, name").order("sort_order"),
     supabase
@@ -55,9 +55,11 @@ export default async function KotPage({ searchParams }: PageProps<"/admin/kot">)
       .is("resolved_at", null)
       .order("reported_at"),
     ticketsQuery(supabase).eq("status", "cancelled").is("stop_work_acknowledged_at", null).order("cancelled_at"),
+    ticketsQuery(supabase).eq("has_pending_changes", true).neq("status", "cancelled").order("revised_at"),
   ]);
   const tickets = toKitchenTickets(rows);
   const stops = toKitchenTickets(stopRows);
+  const changed = toKitchenTickets(changedRows);
   const kitchenName = new Map((kitchens ?? []).map((k) => [k.id, k.name]));
 
   return (
@@ -99,6 +101,17 @@ export default async function KotPage({ searchParams }: PageProps<"/admin/kot">)
             {stops.map((t) => (
               <StopWorkNotice key={t.id} ticket={t} tz={tz} mode={mode} />
             ))}
+          </section>
+        )}
+
+        {changed.length > 0 && (
+          <section aria-label="Changes not yet acknowledged" className="flex flex-col gap-3">
+            <h2 className="text-lg font-semibold">Awaiting acknowledgement of changes</h2>
+            <div className="grid gap-4 xl:grid-cols-2">
+              {changed.map((t) => (
+                <TicketCard key={t.id} ticket={t} tz={tz} mode={mode} nowIso={nowIso} orderHref={`/admin/orders/${t.order_id}`} />
+              ))}
+            </div>
           </section>
         )}
 

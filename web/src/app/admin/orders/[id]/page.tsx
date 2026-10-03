@@ -8,7 +8,7 @@ import { getBusinessTimezone } from "@/lib/settings";
 import { formatPaise } from "@/lib/money";
 import { paymentMethodLabel, sourceLabel } from "@/lib/orders";
 import { dateToZonedLocal, formatDateTime } from "@/lib/time";
-import { Alert, Badge, Card, PageHeader, VegMark } from "@/components/ui";
+import { Alert, Badge, Card, PageHeader, VegMark, cx } from "@/components/ui";
 import { KitchenFlags, SourceBadge, StatusBadge } from "@/components/order-badges";
 import { NoShowPanel, OrderActions, PaymentForm } from "./order-actions";
 import { FulfilmentPanel } from "./fulfilment-panel";
@@ -16,7 +16,7 @@ import { BillPanel, DiscountForm } from "./billing-panel";
 import { EditItems } from "./edit-items";
 import { loadCatalogue } from "@/lib/catalogue";
 import { ticketsQuery, toKitchenTickets } from "@/lib/kitchen-data";
-import { ticketStatusLabel } from "@/lib/kitchen";
+import { describeChange, parseTicketChanges, ticketStatusLabel } from "@/lib/kitchen";
 import { StopWorkNotice, TicketCard } from "@/components/kitchen/ticket-card";
 
 export const metadata: Metadata = { title: "Order" };
@@ -44,6 +44,7 @@ const eventLabel: Record<string, string> = {
   kitchen_issue_resolved: "Kitchen issue resolved",
   stop_work_acknowledged: "Stop-work acknowledged",
   tickets_revised: "Kitchen tickets revised",
+  ticket_changes_acknowledged: "Kitchen acknowledged changes",
   no_show_recorded: "No-show recorded",
   no_show_undone: "No-show undone",
   packed: "Packed",
@@ -95,43 +96,51 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
   const unmapped = (items ?? []).filter((i) => i.prep_type === "made_to_order" && !i.kitchen_id);
   // Items can change until kitchen work starts; confirmed orders only by an admin (update_order_items).
   const tickets = toKitchenTickets((await ticketsQuery(supabase).eq("order_id", id).order("reference")).data);
-  // Once any live ticket is past New, items and pickup time are locked until kitchen revisions (5C).
-  const kitchenLocked = tickets.some((t) => t.status !== "new" && t.status !== "cancelled");
   const kitchenAllReady = tickets.some((t) => t.status !== "cancelled") && tickets.every((t) => t.status === "ready" || t.status === "cancelled");
   const kitchenIssues = tickets.some((t) => t.issues.some((i) => !i.resolved_at));
   const waitingKitchens = tickets
     .filter((t) => t.status !== "ready" && t.status !== "cancelled")
     .map((t) => `${kitchenName.get(t.kitchen_id) ?? "Kitchen"} (${ticketStatusLabel[t.status].toLowerCase()})`);
+  // Items can change on draft and pending orders, and (admin, with a reason) on confirmed and
+  // preparing ones: kitchens get a revision to acknowledge (5C). Packed orders are reopened first.
   const canEditItems =
-    !bill && !kitchenLocked && (["draft", "pending_confirmation"].includes(order.status) || (order.status === "confirmed" && isAdmin));
+    !bill && (["draft", "pending_confirmation"].includes(order.status) || (["confirmed", "preparing"].includes(order.status) && isAdmin));
+  const unacknowledged = tickets
+    .filter((t) => t.status !== "cancelled" && t.pending_changes.length > 0)
+    .map((t) => kitchenName.get(t.kitchen_id) ?? "Kitchen");
   const catalogue = canEditItems ? await loadCatalogue(supabase) : [];
 
   const itemList = (
     <ul className="divide-y divide-line">
-      {(items ?? []).map((i) => (
-        <li key={i.id} className="flex flex-wrap items-start justify-between gap-3 py-3">
-          <div className="min-w-0">
-            <p className="font-medium">
-              {i.quantity - i.cancelled_quantity} × {i.product_name} — {i.variant_name}
-            </p>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
-              <VegMark isVeg={i.is_veg} />
-              {i.is_eggless ? <Badge tone="ok">Eggless</Badge> : i.contains_egg && <Badge>Contains egg</Badge>}
-              {i.prep_type === "ready_stock" ? (
-                <Badge>Ready stock</Badge>
-              ) : (
-                <Badge tone={i.kitchen_id ? "brand" : "danger"}>{i.kitchen_id ? kitchenName.get(i.kitchen_id) : "No kitchen"}</Badge>
-              )}
-              {i.allergens.length > 0 && <span className="text-xs text-muted">Allergens: {i.allergens.join(", ")}</span>}
+      {(items ?? []).map((i) => {
+        // 5C: an item removed after the kitchen acknowledged stays on the order, fully cancelled.
+        const removed = i.quantity === i.cancelled_quantity;
+        return (
+          <li key={i.id} className={cx("flex flex-wrap items-start justify-between gap-3 py-3", removed && "opacity-60")}>
+            <div className="min-w-0">
+              <p className={cx("font-medium", removed && "line-through")}>
+                {removed ? i.quantity : i.quantity - i.cancelled_quantity} × {i.product_name} — {i.variant_name}
+              </p>
+              {removed && <Badge tone="danger" className="mt-1">Removed</Badge>}
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+                <VegMark isVeg={i.is_veg} />
+                {i.is_eggless ? <Badge tone="ok">Eggless</Badge> : i.contains_egg && <Badge>Contains egg</Badge>}
+                {i.prep_type === "ready_stock" ? (
+                  <Badge>Ready stock</Badge>
+                ) : (
+                  <Badge tone={i.kitchen_id ? "brand" : "danger"}>{i.kitchen_id ? kitchenName.get(i.kitchen_id) : "No kitchen"}</Badge>
+                )}
+                {i.allergens.length > 0 && <span className="text-xs text-muted">Allergens: {i.allergens.join(", ")}</span>}
+              </div>
+              {i.notes && <p className="mt-1 text-sm">“{i.notes}”</p>}
             </div>
-            {i.notes && <p className="mt-1 text-sm">“{i.notes}”</p>}
-          </div>
-          <div className="text-right">
-            <p className="font-medium">{formatPaise(i.line_total_paise)}</p>
-            <p className="text-xs text-muted">{formatPaise(i.unit_price_paise)} each · GST {i.tax_rate_bps / 100}%</p>
-          </div>
-        </li>
-      ))}
+            <div className="text-right">
+              <p className="font-medium">{formatPaise(i.line_total_paise)}</p>
+              <p className="text-xs text-muted">{formatPaise(i.unit_price_paise)} each · GST {i.tax_rate_bps / 100}%</p>
+            </div>
+          </li>
+        );
+      })}
     </ul>
   );
 
@@ -147,7 +156,7 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
             <span>/</span>
             <SourceBadge source={order.source} />
             <StatusBadge status={order.status} />
-            <KitchenFlags progress={{ all_ready: kitchenAllReady, open_issues: kitchenIssues ? 1 : 0 }} />
+            <KitchenFlags progress={{ all_ready: kitchenAllReady, open_issues: kitchenIssues ? 1 : 0, changes_pending: unacknowledged.length }} />
           </span>
         }
       />
@@ -187,10 +196,10 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
                 orderId={order.id}
                 version={order.version ?? 0}
                 isAdmin={isAdmin}
-                isConfirmed={order.status === "confirmed"}
+                needsReason={["confirmed", "preparing"].includes(order.status)}
                 discountPaise={order.discount_paise ?? 0}
                 catalogue={catalogue}
-                existing={(items ?? []).map((i) => ({
+                existing={(items ?? []).filter((i) => i.quantity > i.cancelled_quantity).map((i) => ({
                   id: i.id,
                   productName: i.product_name,
                   variantName: i.variant_name,
@@ -204,6 +213,9 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
               </EditItems>
             ) : (
               itemList
+            )}
+            {order.status === "ready" && isAdmin && !bill && (
+              <p className="mt-2 text-sm text-muted">To change items or the pickup time, reopen packing first.</p>
             )}
             <dl className="mt-3 flex flex-col gap-1 border-t border-line pt-3 text-sm">
               {(order.discount_paise ?? 0) > 0 && (
@@ -293,7 +305,6 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
                 isAdmin={isAdmin}
                 canConfirm={isAdmin || order.source === "IN_STORE"}
                 dueLocal={order.due_at ? dateToZonedLocal(new Date(order.due_at), tz) : ""}
-                kitchenLocked={kitchenLocked}
                 categoryIds={[...new Set((items ?? []).map((i) => i.category_id).filter((id): id is string => Boolean(id)))]}
               />
             </div>
@@ -313,6 +324,7 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
                 balancePaise={balance}
                 waitingKitchens={waitingKitchens}
                 openIssues={kitchenIssues}
+                unacknowledged={unacknowledged}
                 packed={noShow?.packed_at ? { label: `${formatDateTime(noShow.packed_at, tz)} · ${who(noShow.packed_by)}`, note: noShow.packing_note } : null}
                 handedOver={
                   noShow?.handed_over_by && order.completed_at
@@ -377,11 +389,6 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
           {tickets.length > 0 && (
             <Card className="lg:col-span-2">
               <h2 className="mb-3 text-lg font-semibold">Kitchen</h2>
-              {kitchenLocked && !closed && (
-                <p className="mb-3 text-sm text-muted">
-                  The kitchen has acknowledged this order, so its items and pickup time can&apos;t be changed here. Cancel and recreate it if needed.
-                </p>
-              )}
               <div className="grid gap-4 xl:grid-cols-2">
                 {tickets.map((t) =>
                   t.status === "cancelled" && !t.stop_work_acknowledged_at ? (
@@ -417,6 +424,22 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
                           <li>Total {formatPaise(data.total_from)} → {formatPaise(data.total_to)}</li>
                         )}
                       </ul>
+                    )}
+                    {e.event_type === "tickets_revised" && Array.isArray(data.tickets) && (
+                      <ul className="text-xs">
+                        {(data.tickets as { ticket?: string; kitchen?: string; changes?: unknown }[]).map((t, n) => (
+                          <li key={n}>
+                            <span className="font-mono">{t.ticket}</span>
+                            {t.kitchen && ` · ${t.kitchen}`}:{" "}
+                            {parseTicketChanges(t.changes).map((c) => describeChange(c, (iso) => formatDateTime(iso, tz))).join("; ")}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {e.event_type === "ticket_changes_acknowledged" && (
+                      <p className="text-xs">
+                        {parseTicketChanges(data.changes).map((c) => describeChange(c, (iso) => formatDateTime(iso, tz))).join("; ")}
+                      </p>
                     )}
                     {typeof data.no_show_count === "number" && (
                       <p className="text-xs">Customer now has {data.no_show_count} no-show{data.no_show_count === 1 ? "" : "s"}</p>

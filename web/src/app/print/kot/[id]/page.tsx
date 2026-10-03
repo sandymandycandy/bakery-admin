@@ -7,6 +7,7 @@ import { getBusinessTimezone } from "@/lib/settings";
 import { sourceLabel } from "@/lib/orders";
 import { formatDateTime, formatTime } from "@/lib/time";
 import { ticketsQuery, toKitchenTickets } from "@/lib/kitchen-data";
+import { describeChange } from "@/lib/kitchen";
 import { PrintButton } from "../../print-button";
 
 export const metadata: Metadata = { title: "Kitchen ticket" };
@@ -37,27 +38,43 @@ export default async function KitchenTicketPrintPage({ params }: PageProps<"/pri
         <p className="text-center text-lg font-bold">{ticket.reference}</p>
         <p className="text-center">
           {kitchen?.name} · {sourceLabel[ticket.source]}
-          {ticket.revision > 1 && ` · Revision ${ticket.revision}`}
         </p>
+        {ticket.revision > 1 && <p className="mt-1 border-2 border-black text-center font-bold">REVISED r{ticket.revision}</p>}
+        {ticket.status !== "cancelled" && ticket.pending_changes.length > 0 && (
+          <div className="mt-1 border border-black p-1">
+            <p className="font-bold">CHANGES:</p>
+            <ul>
+              {ticket.pending_changes.map((c) => (
+                <li key={c.key}>- {describeChange(c, (iso) => formatDateTime(iso, tz))}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         {ticket.status === "cancelled" && <p className="mt-1 border-2 border-black text-center font-bold">CANCELLED · DO NOT MAKE</p>}
         <div className="mt-2 border-y border-dashed border-black py-1">
           <p className="font-bold">Pickup: {formatDateTime(ticket.due_at, tz)}</p>
           <p>Start by: {formatTime(ticket.start_by, tz)}</p>
         </div>
         <ul>
-          {ticket.lines.map((l) => (
-            <li key={l.id} className="border-b border-dashed border-black py-1">
-              <p className="text-sm font-bold">
-                {l.quantity} × {l.product_name}
-              </p>
-              <p>{l.variant_name}</p>
-              <p>
-                {l.is_veg ? "VEG" : "NON-VEG"} · {l.is_eggless ? "EGGLESS" : l.contains_egg ? "CONTAINS EGG" : "NO EGG"}
-              </p>
-              {l.allergens.length > 0 && <p>Allergens: {l.allergens.join(", ")}</p>}
-              {l.notes && <p className="font-bold">Note: {l.notes}</p>}
-            </li>
-          ))}
+          {ticket.lines.map((l) =>
+            l.status === "cancelled" && ticket.status !== "cancelled" ? (
+              <li key={l.id} className="border-b border-dashed border-black py-1 line-through">
+                REMOVED: {l.product_name} — {l.variant_name}
+              </li>
+            ) : (
+              <li key={l.id} className="border-b border-dashed border-black py-1">
+                <p className="text-sm font-bold">
+                  {l.quantity} × {l.product_name}
+                </p>
+                <p>{l.variant_name}</p>
+                <p>
+                  {l.is_veg ? "VEG" : "NON-VEG"} · {l.is_eggless ? "EGGLESS" : l.contains_egg ? "CONTAINS EGG" : "NO EGG"}
+                </p>
+                {l.allergens.length > 0 && <p>Allergens: {l.allergens.join(", ")}</p>}
+                {l.notes && <p className="font-bold">Note: {l.notes}</p>}
+              </li>
+            ),
+          )}
         </ul>
         <p className="mt-2 text-center">Printed {formatDateTime(new Date(), tz)}</p>
       </article>

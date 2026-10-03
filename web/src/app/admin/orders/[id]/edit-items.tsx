@@ -41,7 +41,7 @@ export function EditItems({
   orderId,
   version,
   isAdmin,
-  isConfirmed,
+  needsReason,
   discountPaise,
   existing,
   catalogue,
@@ -50,7 +50,7 @@ export function EditItems({
   orderId: string;
   version: number;
   isAdmin: boolean;
-  isConfirmed: boolean;
+  needsReason: boolean;
   discountPaise: number;
   existing: ExistingLine[];
   catalogue: CatalogueProduct[];
@@ -64,7 +64,7 @@ export function EditItems({
   const [pending, start] = useTransition();
 
   const subtotal = lines.reduce((sum, l) => sum + l.unitPricePaise * l.quantity, 0);
-  const reasonOk = !isConfirmed || reason.trim().length >= 3;
+  const reasonOk = !needsReason || reason.trim().length >= 3;
 
   if (!open) {
     return (
@@ -184,9 +184,9 @@ export function EditItems({
           </div>
         </div>
         <Field
-          label={isConfirmed ? "Reason for the change" : "Reason (optional)"}
+          label={needsReason ? "Reason for the change" : "Reason (optional)"}
           htmlFor="edit-reason"
-          hint={isConfirmed ? "This order is confirmed; the reason is shown in the timeline." : undefined}
+          hint={needsReason ? "Confirmed and preparing orders need a reason; it is shown in the timeline." : undefined}
         >
           <Input id="edit-reason" value={reason} onChange={(e) => { setFailed(null); setReason(e.target.value); }} maxLength={300}
             placeholder="e.g. Customer called to add puffs" />

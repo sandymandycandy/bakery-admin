@@ -33,6 +33,38 @@ export type KitchenIssue = {
   resolution: string | null;
 };
 
+// One entry of a ticket's unacknowledged change list (kitchen_tickets.pending_changes). An added
+// item is a quantity change from 0, a removed one a quantity change to 0.
+export type TicketChange = {
+  key: string;
+  kind: "quantity" | "notes" | "pickup";
+  item: string;
+  from: number | string | null;
+  to: number | string | null;
+};
+
+const CHANGE_KINDS = new Set(["quantity", "notes", "pickup"]);
+const isValue = (v: unknown) => v === null || typeof v === "number" || typeof v === "string";
+
+export function parseTicketChanges(value: unknown): TicketChange[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (e): e is TicketChange =>
+      typeof e === "object" && e !== null &&
+      typeof e.key === "string" && typeof e.item === "string" && CHANGE_KINDS.has(e.kind) &&
+      isValue(e.from) && isValue(e.to),
+  );
+}
+
+// The words the chef reads, e.g. "Chocolate cake — 1 kg: 2 → 3".
+export function describeChange(c: TicketChange, formatTime: (iso: string) => string): string {
+  if (c.kind === "pickup") return `Pickup: ${formatTime(String(c.from))} → ${formatTime(String(c.to))}`;
+  if (c.kind === "notes") return c.to ? `${c.item}: note “${c.to}”` : `${c.item}: note removed`;
+  if (c.from === 0) return `New: ${c.item} × ${c.to}`;
+  if (c.to === 0) return `${c.item}: removed`;
+  return `${c.item}: ${c.from} → ${c.to}`;
+}
+
 export type KitchenTicket = {
   id: string;
   order_id: string;
@@ -49,6 +81,8 @@ export type KitchenTicket = {
   cancelled_at: string | null;
   stop_work_acknowledged_at: string | null;
   print_count: number;
+  pending_changes: TicketChange[];
+  changes_acknowledged_at: string | null;
   lines: KitchenTicketLine[];
   issues: KitchenIssue[];
 };
@@ -82,8 +116,9 @@ export const ADMIN_KITCHEN_REASON_MIN = 5;
 export type QueueGroup<T> = { key: "today" | "tomorrow" | "later"; label: string; tickets: T[] };
 
 // The chef's active queue: Today (including overdue work from earlier days), Tomorrow, Later.
-// Within a group: overdue first, then earliest start-by, then earliest pickup. Empty groups are left out.
-export function groupQueue<T extends { due_at: string; start_by: string }>(
+// Within a group: tickets with unacknowledged changes first, then overdue, then earliest start-by,
+// then earliest pickup. Empty groups are left out.
+export function groupQueue<T extends { due_at: string; start_by: string; pending_changes?: unknown[] }>(
   tickets: T[],
   opts: { now: Date; todayKey: string; tomorrowKey: string; dayKeyOf: (iso: string) => string },
 ): QueueGroup<T>[] {
@@ -99,9 +134,11 @@ export function groupQueue<T extends { due_at: string; start_by: string }>(
   }
   const now = opts.now.getTime();
   const overdueFirst = (t: T) => (Date.parse(t.due_at) < now ? 0 : 1);
+  const changedFirst = (t: T) => ((t.pending_changes?.length ?? 0) > 0 ? 0 : 1);
   for (const g of groups) {
     g.tickets.sort(
       (a, b) =>
+        changedFirst(a) - changedFirst(b) ||
         overdueFirst(a) - overdueFirst(b) ||
         Date.parse(a.start_by) - Date.parse(b.start_by) ||
         Date.parse(a.due_at) - Date.parse(b.due_at),

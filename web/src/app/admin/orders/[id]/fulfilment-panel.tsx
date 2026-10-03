@@ -21,6 +21,7 @@ export function FulfilmentPanel({
   balancePaise,
   waitingKitchens,
   openIssues,
+  unacknowledged,
   packed,
   handedOver,
 }: {
@@ -31,6 +32,7 @@ export function FulfilmentPanel({
   balancePaise: number;
   waitingKitchens: string[];
   openIssues: boolean;
+  unacknowledged: string[];
   packed: { label: string; note: string | null } | null;
   handedOver: { label: string; collectedBy: string | null; creditReason: string | null } | null;
 }) {
@@ -61,7 +63,8 @@ export function FulfilmentPanel({
     });
   }
 
-  const packable = (status === "confirmed" || status === "preparing") && waitingKitchens.length === 0 && !openIssues;
+  const packable =
+    (status === "confirmed" || status === "preparing") && waitingKitchens.length === 0 && !openIssues && unacknowledged.length === 0;
   const handover = (creditReason?: string) =>
     recordHandoverAction({ orderId, version, collectedBy, creditReason });
 
@@ -111,6 +114,11 @@ export function FulfilmentPanel({
           </p>
         )}
         {openIssues && <p className="text-sm font-medium text-danger">Resolve the open kitchen issue before packing.</p>}
+        {unacknowledged.length > 0 && (
+          <p className="text-sm font-medium text-danger">
+            Not acknowledged by the kitchen yet: {unacknowledged.join(", ")}. The kitchen acknowledges the latest change on its screen.
+          </p>
+        )}
         {packable && (
           <p className="text-sm text-muted">Everything is ready. Check each item, quantity and any cake wording, then confirm the packing.</p>
         )}
