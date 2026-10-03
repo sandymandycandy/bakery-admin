@@ -137,7 +137,7 @@ export function TicketCard({
             <Button
               className="mt-3 px-5 py-3 text-base"
               disabled={pending || !canAct}
-              onClick={() => run(() => acknowledgeTicketChangesAction(ticket.id, adminReason))}
+              onClick={() => run(() => acknowledgeTicketChangesAction(ticket.id, ticket.revision, adminReason))}
             >
               {pending ? "Saving…" : "Acknowledge changes"}
             </Button>

@@ -44,6 +44,15 @@ insert into ctx select 'cake', v.id::text from public.product_variants v join pu
 insert into ctx select 'bread', v.id::text from public.product_variants v join public.products p on p.id = v.product_id where p.name = 'T Rv Bread';
 insert into ctx select 'cookie', v.id::text from public.product_variants v join public.products p on p.id = v.product_id where p.name = 'T Rv Cookie';
 
+-- Review fix: a capped category (T Rv Tarts, at most 1 order a day) for V27.
+insert into public.categories (name) values ('T Rv Tarts');
+insert into public.products (category_id, name, prep_type, tax_rate_bps)
+  select id, 'T Rv Tart', 'made_to_order', 500 from public.categories where name = 'T Rv Tarts';
+insert into public.product_variants (product_id, name, price_paise, lead_time_minutes, kitchen_id)
+  select p.id, 'Each', 3000, 30, k.id from public.products p, public.kitchens k where p.name = 'T Rv Tart' and k.code = 'TR1';
+insert into ctx select 'tart', v.id::text from public.product_variants v join public.products p on p.id = v.product_id where p.name = 'T Rv Tart';
+insert into public.category_daily_caps (category_id, max_orders) select id, 1 from public.categories where name = 'T Rv Tarts';
+
 -- Noon on day p_days after today, business time.
 create function pg_temp.day(p_days integer) returns timestamptz language sql stable as $$
   select (((now() at time zone 'Asia/Kolkata')::date + p_days) + time '12:00') at time zone 'Asia/Kolkata'
@@ -106,7 +115,13 @@ select pg_temp.mk_line((select v::uuid from ctx where k = 'A'), 'bread', 3);
 select pg_temp.mk_line((select v::uuid from ctx where k = 'B'), 'cake', 1);
 select pg_temp.mk_line((select v::uuid from ctx where k = 'B'), 'bread', 1);
 select pg_temp.mk_line((select v::uuid from ctx where k = 'C'), 'cake', 1);
-select private.recalc_order_totals(v::uuid) from ctx where k in ('A', 'B', 'C');
+-- D: cake ×1 + tart ×1 · E: tart ×1 (both on day 6, for V27/V28)
+insert into ctx values ('D', pg_temp.mk_order(990404, pg_temp.day(6))::text);
+insert into ctx values ('E', pg_temp.mk_order(990405, pg_temp.day(6))::text);
+select pg_temp.mk_line((select v::uuid from ctx where k = 'D'), 'cake', 1);
+select pg_temp.mk_line((select v::uuid from ctx where k = 'D'), 'tart', 1);
+select pg_temp.mk_line((select v::uuid from ctx where k = 'E'), 'tart', 1);
+select private.recalc_order_totals(v::uuid) from ctx where k in ('A', 'B', 'C', 'D', 'E');
 
 set local role authenticated;
 
@@ -397,6 +412,49 @@ begin
     (select string_agg((e ->> 'name') || ' ×' || (e ->> 'quantity'), ', ' order by (e ->> 'line_no')::integer)
      from public.bills b, jsonb_array_elements(b.lines) e where b.order_id = a)
     || ' / ' || (select total_paise from public.bills where order_id = a));
+end $$;
+
+-- ===== Review fixes =====
+-- V27: a removed (cancelled) line must not count as "already on the order" for category caps.
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000009a1","role":"authenticated"}', true);
+do $$
+declare d uuid := (select v::uuid from ctx where k = 'D');
+begin
+  perform public.confirm_order(d, 1);
+  insert into ctx select 'D-TR1', t.id::text from public.kitchen_tickets t where t.order_id = d;
+end $$;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000009f1","role":"authenticated"}', true);
+do $$ begin perform public.acknowledge_ticket((select v::uuid from ctx where k = 'D-TR1')); end $$;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000009a1","role":"authenticated"}', true);
+do $$
+declare h text; d uuid := (select v::uuid from ctx where k = 'D');
+begin
+  perform public.update_order_items(d, pg_temp.ver(d), jsonb_build_array(
+    jsonb_build_object('line_id', pg_temp.line(d, 'T Rv Cake'), 'quantity', 1)), 'No tart');
+  perform public.confirm_order((select v::uuid from ctx where k = 'E'), 1);
+  begin perform public.update_order_items(d, pg_temp.ver(d), jsonb_build_array(
+          jsonb_build_object('line_id', pg_temp.line(d, 'T Rv Cake'), 'quantity', 1),
+          jsonb_build_object('variant_id', (select v from ctx where k = 'tart'), 'quantity', 1)), 'Tart after all');
+    insert into r(check_name,outcome) values ('V27 re-adding a removed item checks the category cap again', 'ALLOWED');
+  -- expect: capacity: T Rv Tarts: 1/1 orders on <DD Mon>. An admin can override with a reason.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('V27 re-adding a removed item checks the category cap again', h || ': ' || sqlerrm); end;
+end $$;
+
+-- V28: the kitchen acknowledges the revision it was shown, not a newer one.
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000009f1","role":"authenticated"}', true);
+do $$
+declare h text; t public.kitchen_tickets; tk uuid := (select v::uuid from ctx where k = 'D-TR1');
+begin
+  begin perform public.acknowledge_ticket_changes(tk, null, 1);
+    insert into r(check_name,outcome) values ('V28 acknowledging an older revision is refused', 'ALLOWED');
+  -- expect: conflict: The order changed again. Check the new list of changes, then acknowledge.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('V28 acknowledging an older revision is refused', h || ': ' || sqlerrm); end;
+  t := public.acknowledge_ticket_changes(tk, null, 2);
+  -- expect: r2 / 0
+  insert into r(check_name,outcome) values ('V29 acknowledging the revision shown clears the list',
+    'r' || t.revision || ' / ' || jsonb_array_length(t.pending_changes));
 end $$;
 
 reset role;

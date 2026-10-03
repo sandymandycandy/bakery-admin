@@ -984,7 +984,7 @@ export type Database = {
         Args: { p_reason?: string; p_ticket_id: string }
       }
       acknowledge_ticket_changes: RpcReturnsTicket & {
-        Args: { p_reason?: string; p_ticket_id: string }
+        Args: { p_expected_revision?: number; p_reason?: string; p_ticket_id: string }
       }
       record_ticket_print: {
         Args: { p_ticket_id: string }

@@ -27,11 +27,17 @@ export async function acknowledgeTicketAction(ticketId: string, reason?: string)
   return { ok: true };
 }
 
-export async function acknowledgeTicketChangesAction(ticketId: string, reason?: string): Promise<Result> {
+// revision: the ticket revision on screen. A newer one is refused, so changes are never cleared unseen.
+export async function acknowledgeTicketChangesAction(ticketId: string, revision: number, reason?: string): Promise<Result> {
   await assertRole(["chef", "admin"]);
   if (!uuid.safeParse(ticketId).success) return { message: "Invalid ticket." };
+  if (!Number.isInteger(revision) || revision < 1) return { message: "Invalid ticket." };
   const supabase = await createClient();
-  const { error } = await supabase.rpc("acknowledge_ticket_changes", { p_ticket_id: ticketId, p_reason: reasonArg(reason) });
+  const { error } = await supabase.rpc("acknowledge_ticket_changes", {
+    p_ticket_id: ticketId,
+    p_reason: reasonArg(reason),
+    p_expected_revision: revision,
+  });
   if (error) return rpcError(error);
   afterTicketChange();
   return { ok: true };
