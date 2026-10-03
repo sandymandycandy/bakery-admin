@@ -162,7 +162,7 @@ Depends on: confirmed orders from Phase 4. Split into 5A (kitchen tickets, built
 - [x] Live updates and connectivity state: 10-second change stamp with Updated/Offline indicator (5A). Supabase Realtime deferred.
 - [x] Implement KOT browser print/reprint (80mm) preserving ticket identity and revision; reprints say COPY (5A).
 - [x] Show eggless/veg marks prominently on KOT lines (AC-33) (5A).
-- [ ] Chef PIN sign-in on registered tablets (AC-34) (5D).
+- [x] Chef PIN sign-in on registered tablets (AC-34) (5D, 2026-10-03; HANDOVER section 16; `pin_logic.sql` 19/19). Needs `SUPABASE_SECRET_KEY` on Vercel for the live site.
 - [ ] Browser click-through of the chef screen, KOT page, kitchen card, print on a tablet-sized window, and the packing and handover card.
 - [ ] Verify AC-02 through AC-05, AC-08, AC-09, AC-12 through AC-14, AC-16, and AC-33.
 
