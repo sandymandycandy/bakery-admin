@@ -305,7 +305,7 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/ad
                 isAdmin={isAdmin}
                 canConfirm={isAdmin || order.source === "IN_STORE"}
                 dueLocal={order.due_at ? dateToZonedLocal(new Date(order.due_at), tz) : ""}
-                categoryIds={[...new Set((items ?? []).map((i) => i.category_id).filter((id): id is string => Boolean(id)))]}
+                categoryIds={[...new Set((items ?? []).filter((i) => i.quantity > i.cancelled_quantity).map((i) => i.category_id).filter((id): id is string => Boolean(id)))]}
               />
             </div>
           </Card>

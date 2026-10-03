@@ -340,7 +340,8 @@ export function StopWorkNotice({ ticket, tz, mode }: { ticket: KitchenTicket; tz
         {ticket.cancelled_at && ` · ${formatTime(ticket.cancelled_at, tz)}`}
       </p>
       <ul className="mt-2 text-base">
-        {ticket.lines.map((l) => (
+        {/* Lines removed by an earlier revision (quantity 0) are not work to stop. */}
+        {ticket.lines.filter((l) => l.quantity > 0).map((l) => (
           <li key={l.id}>
             {l.quantity}× {l.product_name} — {l.variant_name}
             {l.ready_quantity > 0 && ` (${l.ready_quantity} already made)`}

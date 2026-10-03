@@ -118,10 +118,13 @@ select pg_temp.mk_line((select v::uuid from ctx where k = 'C'), 'cake', 1);
 -- D: cake ×1 + tart ×1 · E: tart ×1 (both on day 6, for V27/V28)
 insert into ctx values ('D', pg_temp.mk_order(990404, pg_temp.day(6))::text);
 insert into ctx values ('E', pg_temp.mk_order(990405, pg_temp.day(6))::text);
+-- F: cake ×2 (V31)
+insert into ctx values ('F', pg_temp.mk_order(990406, pg_temp.day(3))::text);
+select pg_temp.mk_line((select v::uuid from ctx where k = 'F'), 'cake', 2);
 select pg_temp.mk_line((select v::uuid from ctx where k = 'D'), 'cake', 1);
 select pg_temp.mk_line((select v::uuid from ctx where k = 'D'), 'tart', 1);
 select pg_temp.mk_line((select v::uuid from ctx where k = 'E'), 'tart', 1);
-select private.recalc_order_totals(v::uuid) from ctx where k in ('A', 'B', 'C', 'D', 'E');
+select private.recalc_order_totals(v::uuid) from ctx where k in ('A', 'B', 'C', 'D', 'E', 'F');
 
 set local role authenticated;
 
@@ -455,6 +458,63 @@ begin
   -- expect: r2 / 0
   insert into r(check_name,outcome) values ('V29 acknowledging the revision shown clears the list',
     'r' || t.revision || ' / ' || jsonb_array_length(t.pending_changes));
+end $$;
+
+-- ===== Deferred review minors =====
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000009a1","role":"authenticated"}', true);
+do $$
+declare d uuid := (select v::uuid from ctx where k = 'D');
+begin
+  -- expect: 1
+  insert into r(check_name,outcome) values ('V30 a removed item no longer lists its kitchen on the order',
+    (select cardinality(kitchen_ids) from public.order_summaries where id = (select v::uuid from ctx where k = 'B'))::text);
+
+  -- Add cookies to D (acknowledged), then take them off again before the kitchen acknowledges.
+  perform public.update_order_items(d, pg_temp.ver(d), jsonb_build_array(
+    jsonb_build_object('line_id', pg_temp.line(d, 'T Rv Cake'), 'quantity', 1),
+    jsonb_build_object('variant_id', (select v from ctx where k = 'cookie'), 'quantity', 6)), 'Cookies');
+  perform public.update_order_items(d, pg_temp.ver(d), jsonb_build_array(
+    jsonb_build_object('line_id', pg_temp.line(d, 'T Rv Cake'), 'quantity', 1)), 'No cookies after all');
+  -- expect: acknowledged r4 / T Rv Cake 0/1 pending, T Rv Tart 0/0 cancelled /
+  insert into r(check_name,outcome) values ('V32 an item added and removed before acknowledgement leaves no trace on the ticket',
+    pg_temp.tk(d, 'TR1') || ' / ' || pg_temp.pending(d, 'TR1'));
+
+  -- Move D's pickup in UTC, then back in India time: the change list nets out.
+  set local timezone = 'UTC';
+  perform public.reschedule_order(d, pg_temp.ver(d), pg_temp.day(6) + interval '1 hour', 'Later');
+  set local timezone = 'Asia/Kolkata';
+  perform public.reschedule_order(d, pg_temp.ver(d), pg_temp.day(6), 'Back to noon');
+  -- expect:
+  insert into r(check_name,outcome) values ('V34 a pickup moved and moved back nets out whatever the session time zone',
+    pg_temp.pending(d, 'TR1'));
+
+  perform public.confirm_order((select v::uuid from ctx where k = 'F'), 1);
+  insert into ctx select 'F-TR1', t.id::text from public.kitchen_tickets t where t.order_id = (select v::uuid from ctx where k = 'F');
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000009f1","role":"authenticated"}', true);
+do $$
+declare h text; d uuid := (select v::uuid from ctx where k = 'D');
+begin
+  perform public.set_line_ready(pg_temp.tline((select v::uuid from ctx where k = 'F'), 'T Rv Cake'), 1);
+  begin perform public.report_issue((select v::uuid from ctx where k = 'D-TR1'), 'quality', 'Tart cracked', pg_temp.tline(d, 'T Rv Tart'));
+    insert into r(check_name,outcome) values ('V33 no issue can be reported on a removed item', 'ALLOWED');
+  -- expect: validation: This item was removed from the order.
+  exception when others then get stacked diagnostics h = pg_exception_hint;
+    insert into r(check_name,outcome) values ('V33 no issue can be reported on a removed item', h || ': ' || sqlerrm); end;
+end $$;
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000009a1","role":"authenticated"}', true);
+do $$
+declare f uuid := (select v::uuid from ctx where k = 'F');
+begin
+  -- One of two cakes is made; the customer now wants one, so the ticket becomes Ready through the edit.
+  perform public.update_order_items(f, pg_temp.ver(f), jsonb_build_array(
+    jsonb_build_object('line_id', pg_temp.line(f, 'T Rv Cake'), 'quantity', 1)), 'Only one cake');
+  -- expect: ready r2 / Order changed: everything left was already made.
+  insert into r(check_name,outcome) values ('V31 a ticket made Ready by an edit says so in the timeline',
+    split_part(pg_temp.tk(f, 'TR1'), ' / ', 1) || ' / '
+    || (select reason from public.order_events where order_id = f and event_type = 'ticket_ready'));
 end $$;
 
 reset role;

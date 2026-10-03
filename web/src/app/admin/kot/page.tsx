@@ -57,9 +57,11 @@ export default async function KotPage({ searchParams }: PageProps<"/admin/kot">)
     ticketsQuery(supabase).eq("status", "cancelled").is("stop_work_acknowledged_at", null).order("cancelled_at"),
     ticketsQuery(supabase).eq("has_pending_changes", true).neq("status", "cancelled").order("revised_at"),
   ]);
-  const tickets = toKitchenTickets(rows);
   const stops = toKitchenTickets(stopRows);
   const changed = toKitchenTickets(changedRows);
+  // Tickets awaiting acknowledgement of changes have their own list above; do not show them twice.
+  const changedIds = new Set(changed.map((t) => t.id));
+  const tickets = toKitchenTickets(rows).filter((t) => !changedIds.has(t.id));
   const kitchenName = new Map((kitchens ?? []).map((k) => [k.id, k.name]));
 
   return (

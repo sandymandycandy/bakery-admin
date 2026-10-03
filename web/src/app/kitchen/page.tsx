@@ -52,7 +52,8 @@ export default async function KitchenPage({ searchParams }: PageProps<"/kitchen"
     .or("status.in.(new,acknowledged,preparing),has_pending_changes.is.true");
   let stops = ticketsQuery(supabase).eq("status", "cancelled").is("stop_work_acknowledged_at", null).order("cancelled_at");
   let done = ticketsQuery(supabase)
-    .or(`and(status.eq.ready,ready_at.gte."${since}"),and(status.eq.cancelled,stop_work_acknowledged_at.gte."${since}")`)
+    // A Ready ticket with unacknowledged changes stays on Active only (5C).
+    .or(`and(status.eq.ready,has_pending_changes.is.false,ready_at.gte."${since}"),and(status.eq.cancelled,stop_work_acknowledged_at.gte."${since}")`)
     .order("due_at");
   if (kitchenId !== "all") {
     active = active.eq("kitchen_id", kitchenId);

@@ -56,7 +56,8 @@ export default async function KitchenTicketPrintPage({ params }: PageProps<"/pri
           <p>Start by: {formatTime(ticket.start_by, tz)}</p>
         </div>
         <ul>
-          {ticket.lines.map((l) =>
+          {/* On a cancelled ticket, lines removed by an earlier revision (quantity 0) are left out. */}
+          {ticket.lines.filter((l) => l.quantity > 0 || ticket.status !== "cancelled").map((l) =>
             l.status === "cancelled" && ticket.status !== "cancelled" ? (
               <li key={l.id} className="border-b border-dashed border-black py-1 line-through">
                 REMOVED: {l.product_name} — {l.variant_name}
