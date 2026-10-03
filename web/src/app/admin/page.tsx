@@ -8,6 +8,7 @@ import { OPEN_STATUSES } from "@/lib/orders";
 import { addDays, formatDateTime, zonedDayKey, zonedDayRange } from "@/lib/time";
 import { Alert, Badge, ButtonLink, Card, PageHeader } from "@/components/ui";
 import { SourceBadge, StatusBadge } from "@/components/order-badges";
+import { kitchenWorkload, netCollected, type WorkloadTicket } from "@/lib/home";
 
 export const metadata: Metadata = { title: "Home" };
 
@@ -30,7 +31,7 @@ export default async function AdminHome() {
   const nowIso = new Date().toISOString();
   const supabase = await createClient();
 
-  const [dueToday, pending, overdue, upcoming, unmapped, settings, chefs, products, readyOrders] = await Promise.all([
+  const [dueToday, pending, overdue, upcoming, unmapped, settings, chefs, products, readyOrders, kitchens, tickets, stopWork, issues, paidToday] = await Promise.all([
     supabase.from("order_summaries").select("id, source, status, balance_paise").in("status", OPEN_STATUSES)
       .gte("due_at", start.toISOString()).lt("due_at", end.toISOString()),
     supabase.from("orders").select("id", { count: "exact", head: true }).eq("status", "pending_confirmation"),
@@ -43,6 +44,18 @@ export default async function AdminHome() {
     supabase.from("products").select("id", { count: "exact", head: true }).is("archived_at", null),
     supabase.from("order_summaries").select("id, reference, source, customer_name, due_at, balance_paise")
       .eq("status", "ready").order("due_at").limit(20),
+    supabase.from("kitchens").select("id, name").eq("is_active", true).order("sort_order"),
+    // Work still in the kitchens, plus Ready tickets whose change the kitchen has not acknowledged.
+    supabase.from("kitchen_tickets")
+      .select("kitchen_id, status, start_by, due_at, has_pending_changes, kitchen_ticket_lines(quantity, ready_quantity, status)")
+      .neq("status", "cancelled")
+      .or("status.in.(new,acknowledged,preparing),has_pending_changes.is.true"),
+    supabase.from("kitchen_tickets").select("id", { count: "exact", head: true }).eq("status", "cancelled").is("stop_work_acknowledged_at", null),
+    supabase.from("kitchen_issues").select("id", { count: "exact", head: true }).is("resolved_at", null),
+    // Money received today (payment dates, like the sales report); admins only.
+    isAdmin
+      ? supabase.from("payments").select("kind, amount_paise").gte("recorded_at", start.toISOString()).lt("recorded_at", end.toISOString())
+      : Promise.resolve({ data: null }),
   ]);
 
   const todays = dueToday.data ?? [];
@@ -53,6 +66,21 @@ export default async function AdminHome() {
   const ready = readyOrders.data ?? [];
   const isLate = (due: string | null) => Boolean(due && Date.parse(due) < Date.parse(nowIso));
   const late = ready.filter((o) => isLate(o.due_at)).length;
+
+  const nowMs = Date.parse(nowIso);
+  const workload = kitchenWorkload(kitchens.data ?? [], (tickets.data ?? []) as WorkloadTicket[], nowMs);
+  const changesWaiting = workload.reduce((s, k) => s + k.changes, 0);
+  const lateStarts = workload.reduce((s, k) => s + k.lateStart, 0);
+  const stopWorkWaiting = stopWork.count ?? 0;
+  const openIssues = issues.count ?? 0;
+  const kitchenAlerts = [
+    changesWaiting > 0 && `${changesWaiting} kitchen ticket${changesWaiting === 1 ? " has a change" : "s have changes"} not yet acknowledged`,
+    stopWorkWaiting > 0 && `${stopWorkWaiting} stop-work notice${stopWorkWaiting === 1 ? "" : "s"} not yet acknowledged`,
+    openIssues > 0 && `${openIssues} open kitchen issue${openIssues === 1 ? "" : "s"} to resolve`,
+    lateStarts > 0 && `${lateStarts} ticket${lateStarts === 1 ? " is" : "s are"} past the start-by time and not started`,
+  ].filter((a): a is string => Boolean(a));
+  const preparingToday = todays.filter((o) => o.status === "preparing").length;
+  const readyToday = todays.filter((o) => o.status === "ready").length;
 
   const setup = [
     { done: (products.count ?? 0) > 0, label: "Add categories and products", href: "/admin/products" },
@@ -69,6 +97,8 @@ export default async function AdminHome() {
         description={`Today is ${formatDateTime(new Date(), tz).split(",")[0]}. “Due today” counts pickups, not orders created today.`}
         actions={
           <>
+            <ButtonLink href="/admin/calendar" variant="secondary">Open calendar</ButtonLink>
+            <ButtonLink href="/admin/kot" variant="secondary">Open KOT</ButtonLink>
             <ButtonLink href="/admin/orders/new?source=CALL" variant="secondary">New call order</ButtonLink>
             <ButtonLink href="/admin/orders/new?source=IN_STORE">New in-store order</ButtonLink>
           </>
@@ -83,6 +113,17 @@ export default async function AdminHome() {
           </Alert>
         )}
 
+        {kitchenAlerts.length > 0 && (
+          <Alert tone="danger" title="Kitchen needs attention">
+            <ul className="list-disc pl-5">
+              {kitchenAlerts.map((a) => (
+                <li key={a}>{a}</li>
+              ))}
+            </ul>
+            <Link href="/admin/kot" className="mt-1 inline-block font-medium underline">Open KOT</Link>
+          </Alert>
+        )}
+
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Stat label="Due today (open)" value={todays.length} href="/admin/orders?when=today" />
           <Stat label="Awaiting confirmation" value={pending.count ?? 0} href="/admin/orders?list=online_call&when=all&status=pending_confirmation" tone={(pending.count ?? 0) > 0 ? "warn" : undefined} />
@@ -90,8 +131,36 @@ export default async function AdminHome() {
           <Stat label="Balance due today" value={formatPaise(balanceDue)} href="/admin/orders?when=today" />
         </div>
         <p className="-mt-3 text-sm text-muted">
-          Due today: {inStore} in-store · {todays.length - inStore} online / call.
+          Due today: {inStore} in-store · {todays.length - inStore} online / call · {preparingToday} preparing · {readyToday} ready.
+          {paidToday.data && <> Collected today (payments minus refunds): {formatPaise(netCollected(paidToday.data))}.</>}
         </p>
+
+        {workload.length > 0 && (
+          <div className="grid gap-4 md:grid-cols-2">
+            {workload.map((k) => (
+              <Link
+                key={k.kitchenId}
+                href={`/admin/kot?kitchen=${k.kitchenId}`}
+                className="rounded-xl border border-line bg-surface p-4 shadow-sm hover:border-brand/40"
+              >
+                <div className="flex items-baseline justify-between gap-3">
+                  <h2 className="text-lg font-semibold">{k.name}</h2>
+                  <span className="text-sm text-brand">Open queue</span>
+                </div>
+                <p className="mt-1 text-3xl font-semibold">
+                  {k.open} <span className="text-base font-normal text-muted">open ticket{k.open === 1 ? "" : "s"} · {k.itemsLeft} item{k.itemsLeft === 1 ? "" : "s"} to make</span>
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {k.notStarted > 0 && <Badge>{k.notStarted} not started</Badge>}
+                  {k.lateStart > 0 && <Badge tone="danger">{k.lateStart} late to start</Badge>}
+                  {k.overdue > 0 && <Badge tone="danger">{k.overdue} past pickup</Badge>}
+                  {k.changes > 0 && <Badge tone="warn">{k.changes} change{k.changes === 1 ? "" : "s"} unacknowledged</Badge>}
+                  {k.open === 0 && k.changes === 0 && <Badge tone="ok">All caught up</Badge>}
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
 
         {ready.length > 0 && (
           <Card>

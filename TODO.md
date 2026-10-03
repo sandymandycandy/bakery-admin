@@ -191,7 +191,7 @@ Exit: a customer can follow the chosen ordering process, and staff can fulfill t
 
 Depends on: Phases 4–6, adjusted for chosen public scope.
 
-- [ ] Add kitchen workload and remaining alerts to Home. Due today, awaiting confirmation, overdue, balance due, next-7-days, ready for pickup with late collections (5B), missing-routing alert, and setup checklist are done.
+- [x] Home: due today, awaiting confirmation, overdue, balance due, next 7 days, ready for pickup with late collections, missing routing, setup checklist; kitchen workload per kitchen (open, not started, late to start, past pickup, items to make, changes unacknowledged) with links to each queue; kitchen alerts (unacknowledged changes, stop-work, open issues, late starts); preparing/ready counts; money collected today for admins; Open calendar / Open KOT (2026-10-03, `web/src/lib/home.ts`).
 - [ ] Validate dashboard counts and dates against underlying order records.
 - [x] Implement the daily sales report with CSV export (AC-35). (built 2026-10-03; HANDOVER section 15)
 - [ ] Complete settings and staff-management screens.
