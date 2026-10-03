@@ -171,7 +171,9 @@ begin
     return jsonb_build_object('ok', false);
   end if;
   update public.kitchen_devices set failed_pins = 0, last_used_at = now() where id = d.id;
-  return jsonb_build_object('ok', true, 'device_id', d.id, 'kitchen_id', d.kitchen_id);
+  -- signed_in_at comes from the database clock, the same clock as staff_pins.set_at, so the session
+  -- check (kitchen_pin_session_valid) never depends on the web server's clock.
+  return jsonb_build_object('ok', true, 'device_id', d.id, 'kitchen_id', d.kitchen_id, 'signed_in_at', now());
 end;
 $$;
 

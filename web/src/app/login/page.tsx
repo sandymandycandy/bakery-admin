@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getStaff, homePathFor } from "@/lib/auth";
+import { currentTablet } from "@/lib/kitchen-device";
 import { LoginForm, type DemoLogin } from "./login-form";
 
 export const metadata: Metadata = { title: "Staff sign in" };
@@ -19,7 +20,10 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const staff = await getStaff();
   if (staff) redirect(homePathFor(staff.role));
 
-  const { next } = await searchParams;
+  const { next, email } = await searchParams;
+  // A registered kitchen tablet goes to the chef picker; ?email=1 still offers email and password
+  // (for an admin managing the tablet).
+  if (email !== "1" && (await currentTablet())) redirect("/kitchen/pin");
 
   return (
     <main className="flex flex-1 items-center justify-center px-4 py-16">

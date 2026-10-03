@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { requireRole } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { pinSessionStatus } from "@/lib/kitchen-device";
 import { signOut } from "@/app/login/actions";
 import { createClient } from "@/lib/supabase/server";
 import { getBusinessTimezone } from "@/lib/settings";
@@ -35,6 +37,9 @@ function Chip({ href, active, children }: { href: string; active: boolean; child
 
 export default async function KitchenPage({ searchParams }: PageProps<"/kitchen">) {
   const chef = await requireRole(["chef"]);
+  // Signed in by PIN on a tablet: end the session at once if the tablet was revoked or the PIN reset.
+  const pinStatus = await pinSessionStatus(chef.userId);
+  if (pinStatus === "invalid") redirect("/kitchen/pin/end");
   const params = await searchParams;
   const tab = str(params.tab) === "done" ? "done" : "active";
   const kitchenId = chef.kitchens.some((k) => k.id === str(params.k)) ? str(params.k) : "all";
@@ -89,7 +94,7 @@ export default async function KitchenPage({ searchParams }: PageProps<"/kitchen"
           <span className="text-base">{chef.fullName}</span>
           <form action={signOut}>
             <button type="submit" className="rounded-lg border border-line px-4 py-2.5 text-base font-medium hover:bg-brand-soft">
-              Sign out
+              {pinStatus === "ok" ? "Switch chef" : "Sign out"}
             </button>
           </form>
         </div>

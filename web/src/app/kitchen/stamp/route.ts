@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getStaff } from "@/lib/auth";
+import { pinSessionStatus } from "@/lib/kitchen-device";
 import { createClient } from "@/lib/supabase/server";
 import { ticketStamp } from "@/lib/kitchen-data";
 
@@ -10,6 +11,10 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const staff = await getStaff();
   if (!staff) return NextResponse.json({ error: "signed_out" }, { status: 401 });
+  // A PIN session ends within one refresh of the tablet being revoked or the PIN being reset (AC-34).
+  if (staff.role === "chef" && (await pinSessionStatus(staff.userId)) === "invalid") {
+    return NextResponse.json({ error: "signed_out" }, { status: 401 });
+  }
   try {
     return NextResponse.json({ stamp: await ticketStamp(await createClient()) }, { headers: { "Cache-Control": "no-store" } });
   } catch {

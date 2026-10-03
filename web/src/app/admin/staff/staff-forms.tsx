@@ -14,6 +14,7 @@ export type StaffMember = {
   is_active: boolean;
   email: string | null;
   kitchen_ids: string[];
+  pin_set_at: string | null;
 };
 
 const roleLabels = { admin: "Admin", counter: "Counter staff", chef: "Chef" };
@@ -124,14 +125,30 @@ export function StaffRow({
   isSelf,
   saveAction,
   resetAction,
+  pinAction,
+  clearPinAction,
+  pinSetLabel,
 }: {
   member: StaffMember;
   kitchens: Kitchen[];
   isSelf: boolean;
   saveAction: SaveAction;
   resetAction: SaveAction;
+  pinAction?: SaveAction;
+  clearPinAction?: () => Promise<ActionState>;
+  pinSetLabel?: string | null;
 }) {
-  const [mode, setMode] = useState<"view" | "edit" | "password">("view");
+  const [mode, setMode] = useState<"view" | "edit" | "password" | "pin">("view");
+  const [pinState, pinFormAction] = useActionState<ActionState, FormData>(async (prev, formData) => {
+    const result = await pinAction!(prev, formData);
+    if (result.ok) setMode("view");
+    return result;
+  }, {});
+  const [clearState, clearFormAction] = useActionState<ActionState, FormData>(async () => {
+    const result = await clearPinAction!();
+    if (result.ok) setMode("view");
+    return result;
+  }, {});
   const [state, formAction] = useActionState<ActionState, FormData>(async (prev, formData) => {
     const result = await saveAction(prev, formData);
     if (result.ok) setMode("view");
@@ -155,16 +172,55 @@ export function StaffRow({
           <p className="mt-1 text-sm text-muted">
             {member.email ?? "Email hidden (secret key not set)"}
             {member.role === "chef" && ` · ${kitchenNames.length ? kitchenNames.join(", ") : "No kitchen assigned"}`}
+            {member.role === "chef" && pinAction && ` · ${pinSetLabel ? `PIN set ${pinSetLabel}` : "No PIN"}`}
           </p>
         </div>
         {mode === "view" && (
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => setMode("edit")}>Edit</Button>
             <Button variant="ghost" onClick={() => setMode("password")}>Reset password</Button>
+            {member.role === "chef" && pinAction && (
+              <Button variant="ghost" onClick={() => setMode("pin")}>{pinSetLabel ? "Reset PIN" : "Set PIN"}</Button>
+            )}
           </div>
         )}
       </div>
       {mode === "view" && state.ok && state.message && <p className="mt-2 text-sm text-ok">{state.message}</p>}
+      {mode === "view" && pinState.ok && pinState.message && <p className="mt-2 text-sm text-ok">{pinState.message}</p>}
+      {mode === "view" && clearState.ok && clearState.message && <p className="mt-2 text-sm text-ok">{clearState.message}</p>}
+
+      {mode === "pin" && (
+        <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-line pt-4">
+          <form action={pinFormAction} className="flex flex-wrap items-end gap-3">
+            <Field
+              label={`Kitchen tablet PIN for ${member.full_name}`}
+              htmlFor={`staff-${member.user_id}-pin`}
+              error={pinState.fieldErrors?.pin}
+              hint="4 to 6 digits. Works only on registered kitchen tablets."
+            >
+              <Input
+                id={`staff-${member.user_id}-pin`}
+                name="pin"
+                inputMode="numeric"
+                pattern="[0-9]{4,6}"
+                maxLength={6}
+                autoComplete="off"
+                required
+                className="w-32"
+              />
+            </Field>
+            <SubmitButton>Save PIN</SubmitButton>
+            <Button type="button" variant="secondary" onClick={() => setMode("view")}>Cancel</Button>
+          </form>
+          {pinSetLabel && (
+            <form action={clearFormAction}>
+              <SubmitButton variant="ghost" pendingText="Removing…">Remove PIN</SubmitButton>
+            </form>
+          )}
+          <FormMessage state={pinState} />
+          {!clearState.ok && <FormMessage state={clearState} />}
+        </div>
+      )}
 
       {mode === "edit" && (
         <form action={formAction} className="mt-4 border-t border-line pt-4">
@@ -207,6 +263,71 @@ export function StaffRow({
           <SubmitButton pendingText="Resetting…">Set password</SubmitButton>
           <Button type="button" variant="secondary" onClick={() => setMode("view")}>Close</Button>
           <FormMessage state={resetState} />
+        </form>
+      )}
+    </li>
+  );
+}
+
+export type Tablet = {
+  id: string;
+  label: string;
+  kitchenName: string;
+  registered: string;
+  lastUsed: string | null;
+  failedPins: number;
+  revoked: string | null;
+  isThisBrowser: boolean;
+};
+
+export function RegisterTabletForm({ kitchens, action, disabledReason }: { kitchens: Kitchen[]; action: SaveAction; disabledReason?: string }) {
+  const [state, formAction] = useActionState(action, {});
+  const err = state.fieldErrors ?? {};
+  const active = kitchens.filter((k) => k.is_active);
+  return (
+    <form action={formAction}>
+      <fieldset disabled={Boolean(disabledReason)} className="flex flex-wrap items-end gap-3">
+        <Field label="Kitchen" htmlFor="tablet-kitchen" error={err.kitchen_id}>
+          <Select id="tablet-kitchen" name="kitchen_id" defaultValue={active[0]?.id}>
+            {active.map((k) => (
+              <option key={k.id} value={k.id}>{k.name}</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Tablet name" htmlFor="tablet-label" error={err.label}>
+          <Input id="tablet-label" name="label" defaultValue="Kitchen tablet" required maxLength={60} />
+        </Field>
+        <SubmitButton pendingText="Registering…">Register this browser as a tablet</SubmitButton>
+      </fieldset>
+      <div className="mt-2">
+        {disabledReason ? <p className="text-sm text-warn">{disabledReason}</p> : <FormMessage state={state} />}
+      </div>
+    </form>
+  );
+}
+
+export function TabletRow({ tablet, revokeAction }: { tablet: Tablet; revokeAction: () => Promise<ActionState> }) {
+  const [state, formAction] = useActionState<ActionState, FormData>(async () => revokeAction(), {});
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line p-4">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium">{tablet.label}</span>
+          <Badge>{tablet.kitchenName}</Badge>
+          {tablet.isThisBrowser && <Badge tone="brand">This browser</Badge>}
+          {tablet.revoked && <Badge tone="danger">Revoked</Badge>}
+          {tablet.failedPins > 0 && !tablet.revoked && <Badge tone="warn">{tablet.failedPins} wrong PIN{tablet.failedPins === 1 ? "" : "s"}</Badge>}
+        </div>
+        <p className="mt-1 text-sm text-muted">
+          Registered {tablet.registered}
+          {tablet.lastUsed ? ` · last PIN sign-in ${tablet.lastUsed}` : " · no PIN sign-in yet"}
+          {tablet.revoked && ` · revoked ${tablet.revoked}`}
+        </p>
+      </div>
+      {!tablet.revoked && (
+        <form action={formAction} className="flex items-center gap-3">
+          <SubmitButton variant="danger" pendingText="Revoking…">Revoke</SubmitButton>
+          <FormMessage state={state} />
         </form>
       )}
     </li>

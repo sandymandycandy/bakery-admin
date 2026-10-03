@@ -508,6 +508,37 @@ export type Database = {
           },
         ]
       }
+      kitchen_devices: {
+        Row: {
+          failed_pins: number
+          id: string
+          kitchen_id: string
+          label: string
+          last_used_at: string | null
+          registered_at: string
+          registered_by: string | null
+          revoked_at: string | null
+          revoked_by: string | null
+          token_hash: string
+        }
+        Insert: never
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: "kitchen_devices_kitchen_id_fkey"
+            columns: ["kitchen_id"]
+            isOneToOne: false
+            referencedRelation: "kitchens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff_pins: {
+        Row: { pin_hash: string; set_at: string; set_by: string | null; user_id: string }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
       kitchen_ticket_lines: {
         Row: {
           allergens: string[]
@@ -1005,6 +1036,30 @@ export type Database = {
       ticket_stamp: {
         Args: never
         Returns: string
+      }
+      set_staff_pin: {
+        Args: { p_pin: string | null; p_user_id: string }
+        Returns: undefined
+      }
+      register_kitchen_device: {
+        Args: { p_kitchen_id: string; p_label: string; p_token_hash: string }
+        Returns: string
+      }
+      revoke_kitchen_device: {
+        Args: { p_device_id: string }
+        Returns: undefined
+      }
+      verify_kitchen_pin: {
+        Args: { p_pin: string; p_token_hash: string; p_user_id: string }
+        Returns: Json
+      }
+      kitchen_device_chefs: {
+        Args: { p_token_hash: string }
+        Returns: Json
+      }
+      kitchen_pin_session_valid: {
+        Args: { p_signed_in_at: string; p_token_hash: string; p_user_id: string }
+        Returns: boolean
       }
       sales_report: {
         Args: { p_from: string; p_to: string }

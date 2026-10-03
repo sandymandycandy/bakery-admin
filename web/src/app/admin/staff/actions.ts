@@ -7,6 +7,8 @@ import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { env } from "@/lib/env";
 import { checkbox, dbError, text, zodErrors } from "@/lib/form";
 import type { ActionState } from "@/components/form-status";
+import { hashDeviceToken, newDeviceToken } from "@/lib/pin-cookie";
+import { setDeviceCookie } from "@/lib/kitchen-device";
 
 const NO_SECRET_KEY: ActionState = {
   message: "Staff logins need SUPABASE_SECRET_KEY in web/.env.local. Add it and restart the app.",
@@ -182,4 +184,61 @@ export async function resetStaffPassword(userId: string, _prev: ActionState, for
   const { error } = await createAdminClient().auth.admin.updateUserById(userId, { password: parsed.data });
   if (error) return { message: `Could not reset the password. ${error.message}` };
   return { ok: true, message: "Password reset. Share it with them privately." };
+}
+
+// ---------------------------------------------------------------------------
+// Chef PINs and kitchen tablets (5D)
+// ---------------------------------------------------------------------------
+
+const pinSchema = z.string().regex(/^[0-9]{4,6}$/, "A PIN is 4 to 6 digits.");
+
+export async function setChefPin(userId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
+  await assertRole(["admin"]);
+  const parsed = pinSchema.safeParse(String(formData.get("pin") ?? "").trim());
+  if (!parsed.success) {
+    const message = parsed.error.issues[0]?.message ?? "A PIN is 4 to 6 digits.";
+    return { message, fieldErrors: { pin: message } };
+  }
+  const { error } = await (await createClient()).rpc("set_staff_pin", { p_user_id: userId, p_pin: parsed.data });
+  if (error) return { message: error.message };
+  revalidatePath("/admin/staff");
+  return { ok: true, message: "PIN saved. Tell the chef privately; a tablet signed in with the old PIN signs out." };
+}
+
+export async function clearChefPin(userId: string): Promise<ActionState> {
+  await assertRole(["admin"]);
+  const { error } = await (await createClient()).rpc("set_staff_pin", { p_user_id: userId, p_pin: null });
+  if (error) return { message: error.message };
+  revalidatePath("/admin/staff");
+  return { ok: true, message: "PIN removed. This chef can no longer sign in by PIN." };
+}
+
+const tabletSchema = z.object({
+  kitchen_id: z.uuid("Choose a kitchen."),
+  label: z.string().trim().min(1, "Give the tablet a name.").max(60, "Keep the name under 60 characters."),
+});
+
+// Makes this browser a kitchen tablet: a random token in an httpOnly cookie, its hash in the database.
+export async function registerTablet(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  await assertRole(["admin"]);
+  const parsed = tabletSchema.safeParse({ kitchen_id: formData.get("kitchen_id"), label: formData.get("label") });
+  if (!parsed.success) return zodErrors(parsed.error);
+  const token = newDeviceToken();
+  const { error } = await (await createClient()).rpc("register_kitchen_device", {
+    p_kitchen_id: parsed.data.kitchen_id,
+    p_label: parsed.data.label,
+    p_token_hash: hashDeviceToken(token),
+  });
+  if (error) return { message: error.message };
+  await setDeviceCookie(token);
+  revalidatePath("/admin/staff");
+  return { ok: true, message: "This browser is now a kitchen tablet. Sign out and chefs will see their names to sign in by PIN." };
+}
+
+export async function revokeTablet(deviceId: string): Promise<ActionState> {
+  await assertRole(["admin"]);
+  const { error } = await (await createClient()).rpc("revoke_kitchen_device", { p_device_id: deviceId });
+  if (error) return { message: error.message };
+  revalidatePath("/admin/staff");
+  return { ok: true, message: "Tablet revoked. Anyone signed in on it by PIN is signed out within seconds." };
 }

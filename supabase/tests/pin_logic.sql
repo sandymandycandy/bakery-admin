@@ -116,6 +116,11 @@ begin
   -- expect: ok true
   insert into r(check_name,outcome) values ('P10 the right PIN on a registered tablet of the chef''s kitchen',
     pg_temp.verify(h1, '00000000-0000-0000-0000-000000000bf1', '1234'));
+  x := public.verify_kitchen_pin(h1, '00000000-0000-0000-0000-000000000bf1', '1234');
+  -- expect: true / true
+  insert into r(check_name,outcome) values ('P10b the answer carries the database sign-in time, valid for the session check',
+    ((x ->> 'signed_in_at')::timestamptz = now())::text || ' / '
+    || public.kitchen_pin_session_valid(h1, '00000000-0000-0000-0000-000000000bf1', (x ->> 'signed_in_at')::timestamptz)::text);
   -- (Each check runs first, then the count is read in its own statement, after the update.)
   got := pg_temp.verify(h1, '00000000-0000-0000-0000-000000000bf1', '4321');
   -- expect: refused / 1

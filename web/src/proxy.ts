@@ -2,6 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 const PROTECTED_PREFIXES = ["/admin", "/kitchen", "/print"];
+// The chef picker on a registered kitchen tablet is used while signed out (5D).
+const PUBLIC_PATHS = ["/kitchen/pin", "/kitchen/pin/end"];
 
 // Refreshes the Supabase session cookie on every request and sends signed-out
 // visitors to /login. Role checks happen in the admin and kitchen layouts.
@@ -33,7 +35,7 @@ export async function proxy(request: NextRequest) {
   const signedIn = Boolean(data?.claims?.sub);
 
   const path = request.nextUrl.pathname;
-  if (!signedIn && PROTECTED_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
+  if (!signedIn && !PUBLIC_PATHS.includes(path) && PROTECTED_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = `?next=${encodeURIComponent(path)}`;
