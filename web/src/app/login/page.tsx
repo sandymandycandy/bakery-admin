@@ -5,7 +5,7 @@ import { LoginForm, type DemoLogin } from "./login-form";
 
 export const metadata: Metadata = { title: "Staff sign in" };
 
-// Demo logins are pre-filled only while their DEMO_* variables are set (owner's choice: including production).
+// Demo logins appear as "fill" buttons only while their DEMO_* variables are set (owner's choice: including production).
 // Unset the variables to turn this off.
 function demoLogins(): DemoLogin[] {
   const accounts = [
