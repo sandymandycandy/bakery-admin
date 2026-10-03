@@ -734,7 +734,8 @@ export type Database = {
         ]
       }
       orders: {
-        // order_summaries was created with o.* before these columns existed, so only the table has them.
+        // Columns added after OrderRow was written. The view order_summaries has them too since it was
+        // recreated (20261003000500), but its type below does not list them; read them from orders.
         Row: OrderRow & {
           no_show_at: string | null
           no_show_by: string | null

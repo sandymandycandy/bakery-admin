@@ -65,3 +65,19 @@ test("custom ranges are checked before they reach the database", () => {
   assert.equal(reportRange({ from: "2025-01-01", to: "2026-11-01" }, "2026-11-12").error, "Choose a range of at most one year.");
   assert.equal(reportRange({ from: "nonsense", to: "2026-11-01" }, "2026-11-12").error, "Enter dates as YYYY-MM-DD.");
 });
+
+test("names that look like spreadsheet formulas are neutralised in the CSV", () => {
+  const evil = parseSalesReport({
+    from: "2026-11-10", to: "2026-11-10", summary: {},
+    products: [{ name: "=HYPERLINK(\"http://x\")", variant: "+1 kg", quantity: 1, gross_paise: -500, discount_paise: 0, net_paise: -500 }],
+    categories: [{ name: "@Cakes", quantity: 1, gross_paise: 0, discount_paise: 0, net_paise: 0 }],
+  });
+  const csv = reportToCsv(evil, labels);
+  assert.ok(csv.includes(`"'=HYPERLINK(""http://x"")",'+1 kg,1,-5.00,0.00,-5.00`), csv);
+  assert.ok(csv.includes("'@Cakes,1"));
+});
+
+test("impossible calendar dates are refused before they reach the database", () => {
+  assert.equal(reportRange({ from: "2026-02-31", to: "2026-03-05" }, "2026-11-12").error, "Enter dates as YYYY-MM-DD.");
+  assert.equal(reportRange({ from: "2026-02-28", to: "2026-02-30" }, "2026-11-12").error, "Enter dates as YYYY-MM-DD.");
+});

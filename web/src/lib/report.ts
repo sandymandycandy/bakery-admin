@@ -90,6 +90,11 @@ function cell(v: string | number): string {
 
 const row = (...cells: (string | number)[]) => cells.map(cell).join(",");
 
+// Text from the catalogue (product, variant and category names, labels) that starts like a formula
+// gets a leading apostrophe, so Excel and Google Sheets show it instead of running it. Amounts are
+// written by rupees() and stay numbers.
+const text = (s: string) => (/^[=+\-@\t\r]/.test(s) ? `'${s}` : s);
+
 export function reportToCsv(r: SalesReport, labels: ReportLabels): string {
   const s = r.summary;
   const out: string[] = [
@@ -115,22 +120,22 @@ export function reportToCsv(r: SalesReport, labels: ReportLabels): string {
     row("Money"),
     row("Method", "Received", "Refunded", "Net collected"),
     ...r.money.map((m) =>
-      row(labels.method[m.method] ?? m.method, rupees(m.received_paise), rupees(m.refunded_paise), rupees(m.received_paise - m.refunded_paise)),
+      row(text(labels.method[m.method] ?? m.method), rupees(m.received_paise), rupees(m.refunded_paise), rupees(m.received_paise - m.refunded_paise)),
     ),
     "",
     row("By source"),
     row("Source", "Bills", "Billed", "Credited", "Net"),
     ...r.sources.map((x) =>
-      row(labels.source[x.source] ?? x.source, x.bills, rupees(x.billed_paise), rupees(x.credited_paise), rupees(x.net_paise)),
+      row(text(labels.source[x.source] ?? x.source), x.bills, rupees(x.billed_paise), rupees(x.credited_paise), rupees(x.net_paise)),
     ),
     "",
     row("By category"),
     row("Category", "Quantity", "Gross", "Discount", "Net"),
-    ...r.categories.map((c) => row(c.name, c.quantity, rupees(c.gross_paise), rupees(c.discount_paise), rupees(c.net_paise))),
+    ...r.categories.map((c) => row(text(c.name), c.quantity, rupees(c.gross_paise), rupees(c.discount_paise), rupees(c.net_paise))),
     "",
     row("By product"),
     row("Product", "Variant", "Quantity", "Gross", "Discount", "Net"),
-    ...r.products.map((p) => row(p.name, p.variant, p.quantity, rupees(p.gross_paise), rupees(p.discount_paise), rupees(p.net_paise))),
+    ...r.products.map((p) => row(text(p.name), text(p.variant), p.quantity, rupees(p.gross_paise), rupees(p.discount_paise), rupees(p.net_paise))),
   ];
   return out.join("\r\n") + "\r\n";
 }
@@ -141,6 +146,8 @@ export type RangeParams = { range?: string; from?: string; to?: string };
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const toDate = (key: string) => new Date(`${key}T00:00:00Z`);
 const toKey = (d: Date) => d.toISOString().slice(0, 10);
+// A real calendar date: 2026-02-31 parses (as 3 March) but does not survive the round trip.
+const isDay = (key: string) => DAY.test(key) && !Number.isNaN(toDate(key).getTime()) && toKey(toDate(key)) === key;
 const shift = (key: string, days: number) => {
   const d = toDate(key);
   d.setUTCDate(d.getUTCDate() + days);
@@ -153,7 +160,7 @@ export function reportRange(params: RangeParams, todayKey: string): ReportRange 
   if (params.from || params.to) {
     const from = params.from ?? "";
     const to = params.to ?? "";
-    if (!DAY.test(from) || !DAY.test(to) || Number.isNaN(toDate(from).getTime()) || Number.isNaN(toDate(to).getTime())) {
+    if (!isDay(from) || !isDay(to)) {
       return { from: todayKey, to: todayKey, error: "Enter dates as YYYY-MM-DD." };
     }
     if (from > to) return { from, to, error: "Choose a start date on or before the end date." };

@@ -517,6 +517,32 @@ begin
     || (select reason from public.order_events where order_id = f and event_type = 'ticket_ready'));
 end $$;
 
+-- V35: an item added before acknowledgement that the kitchen has partly made stays on the ticket
+-- when it is removed (a "Removed" line), instead of disappearing with the work already done.
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000009a1","role":"authenticated"}', true);
+do $$
+declare d uuid := (select v::uuid from ctx where k = 'D');
+begin
+  perform public.update_order_items(d, pg_temp.ver(d), jsonb_build_array(
+    jsonb_build_object('line_id', pg_temp.line(d, 'T Rv Cake'), 'quantity', 1),
+    jsonb_build_object('variant_id', (select v from ctx where k = 'cookie'), 'quantity', 3)), 'Cookies again');
+end $$;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000009f1","role":"authenticated"}', true);
+do $$ begin
+  perform public.set_line_ready((select l.id from public.kitchen_ticket_lines l join public.kitchen_tickets t on t.id = l.ticket_id
+    where t.order_id = (select v::uuid from ctx where k = 'D') and l.product_name = 'T Rv Cookie' and l.status <> 'cancelled'), 1);
+end $$;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000009a1","role":"authenticated"}', true);
+do $$
+declare d uuid := (select v::uuid from ctx where k = 'D');
+begin
+  perform public.update_order_items(d, pg_temp.ver(d), jsonb_build_array(
+    jsonb_build_object('line_id', pg_temp.line(d, 'T Rv Cake'), 'quantity', 1)), 'No cookies after all');
+  -- expect: preparing <r> / T Rv Cake 0/1 preparing, T Rv Tart 0/0 cancelled, T Rv Cookie 0/0 cancelled
+  insert into r(check_name,outcome) values ('V35 a partly made item added before acknowledgement stays as Removed',
+    pg_temp.tk(d, 'TR1'));
+end $$;
+
 reset role;
 select check_name, outcome from r order by n;
 rollback;
