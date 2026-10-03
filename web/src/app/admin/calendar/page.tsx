@@ -81,7 +81,7 @@ export default async function CalendarPage({ searchParams }: PageProps<"/admin/c
 
   const orderIds = (orders ?? []).map((o) => o.id).filter((v): v is string => Boolean(v));
   const { data: progress } = orderIds.length
-    ? await supabase.from("order_kitchen_progress").select("order_id, all_ready, open_issues").in("order_id", orderIds)
+    ? await supabase.from("order_kitchen_progress").select("order_id, all_ready, open_issues, changes_pending").in("order_id", orderIds)
     : { data: [] };
   const progressById = new Map((progress ?? []).map((p) => [p.order_id, p]));
 
