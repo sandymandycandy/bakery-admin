@@ -12,6 +12,15 @@ export type ReportSummary = {
   credited_tax_paise: number;
   net_paise: number;
   net_tax_paise: number;
+  cgst_paise: number;
+  sgst_paise: number;
+  taxable_paise: number;
+  credited_cgst_paise: number;
+  credited_sgst_paise: number;
+  credited_taxable_paise: number;
+  net_cgst_paise: number;
+  net_sgst_paise: number;
+  net_taxable_paise: number;
 };
 export type ReportMoney = { method: string; received_paise: number; refunded_paise: number };
 export type ReportProduct = { name: string; variant: string; quantity: number; gross_paise: number; discount_paise: number; net_paise: number };
@@ -34,6 +43,8 @@ export type ReportLabels = { method: Record<string, string>; source: Record<stri
 const SUMMARY_KEYS: (keyof ReportSummary)[] = [
   "bills", "gross_paise", "discount_paise", "billed_paise", "tax_paise",
   "credit_notes", "credited_paise", "credited_tax_paise", "net_paise", "net_tax_paise",
+  "cgst_paise", "sgst_paise", "taxable_paise", "credited_cgst_paise", "credited_sgst_paise", "credited_taxable_paise",
+  "net_cgst_paise", "net_sgst_paise", "net_taxable_paise",
 ];
 
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : Number(v) || 0);
@@ -93,6 +104,13 @@ export function reportToCsv(r: SalesReport, labels: ReportLabels): string {
     row("Credited", rupees(s.credited_paise)),
     row("Net sales", rupees(s.net_paise)),
     row("GST on net sales", rupees(s.net_tax_paise)),
+    row("Taxable value (net)", rupees(s.net_taxable_paise)),
+    row("CGST (net)", rupees(s.net_cgst_paise)),
+    row("SGST (net)", rupees(s.net_sgst_paise)),
+    row("CGST on bills", rupees(s.cgst_paise)),
+    row("SGST on bills", rupees(s.sgst_paise)),
+    row("CGST on credit notes", rupees(s.credited_cgst_paise)),
+    row("SGST on credit notes", rupees(s.credited_sgst_paise)),
     "",
     row("Money"),
     row("Method", "Received", "Refunded", "Net collected"),

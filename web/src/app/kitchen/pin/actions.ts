@@ -2,7 +2,17 @@
 
 import { z } from "zod";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
-import { deviceTokenHash, pinSignInAvailable, setPinSession } from "@/lib/kitchen-device";
+import { deviceTokenHash, pinSignInAvailable, recordPinSession } from "@/lib/kitchen-device";
+
+// The login session id inside a Supabase access token (it was just issued to us, so no check needed).
+function sessionIdOf(accessToken: string): string | null {
+  try {
+    const claims = JSON.parse(Buffer.from(accessToken.split(".")[1] ?? "", "base64url").toString("utf8")) as { session_id?: unknown };
+    return typeof claims.session_id === "string" ? claims.session_id : null;
+  } catch {
+    return null;
+  }
+}
 
 const NOT_ACCEPTED = "PIN not accepted. Try again, or ask an admin to reset it.";
 
@@ -35,9 +45,15 @@ export async function pinSignIn(userId: string, pin: string): Promise<{ ok?: tru
   const { data: link, error: linkError } = await admin.auth.admin.generateLink({ type: "magiclink", email });
   if (linkError || !link?.properties?.hashed_token) return { message: "Could not sign in. Try again." };
   const supabase = await createClient();
-  const { error: otpError } = await supabase.auth.verifyOtp({ type: "email", token_hash: link.properties.hashed_token });
-  if (otpError) return { message: "Could not sign in. Try again." };
+  const { data: otp, error: otpError } = await supabase.auth.verifyOtp({ type: "email", token_hash: link.properties.hashed_token });
+  if (otpError || !otp.session) return { message: "Could not sign in. Try again." };
 
-  await setPinSession({ deviceId: result.device_id, userId: parsed.data.userId, signedInAt: result.signed_in_at });
+  // Record the login so a tablet revoke or PIN change can end it. If that fails, do not keep a login
+  // the database cannot end.
+  const sessionId = sessionIdOf(otp.session.access_token);
+  if (!sessionId || !(await recordPinSession(sessionId, result.device_id, parsed.data.userId, result.signed_in_at))) {
+    await supabase.auth.signOut({ scope: "local" });
+    return { message: "Could not sign in. Try again." };
+  }
   return { ok: true };
 }

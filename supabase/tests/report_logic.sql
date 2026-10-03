@@ -111,6 +111,11 @@ begin
   insert into r(check_name,outcome) values ('R1 summary for the day',
     concat_ws(' / ', s ->> 'bills', s ->> 'gross_paise', s ->> 'discount_paise', s ->> 'billed_paise', s ->> 'tax_paise',
       s ->> 'credit_notes', s ->> 'credited_paise', s ->> 'credited_tax_paise', s ->> 'net_paise', s ->> 'net_tax_paise'));
+  -- expect: 4019 / 4021 / 140960 / 214 / 215 / 8571 / 3805 / 3806 / 132389
+  insert into r(check_name,outcome) values ('R1b CGST, SGST and taxable value, for bills, credit notes and net',
+    concat_ws(' / ', s ->> 'cgst_paise', s ->> 'sgst_paise', s ->> 'taxable_paise',
+      s ->> 'credited_cgst_paise', s ->> 'credited_sgst_paise', s ->> 'credited_taxable_paise',
+      s ->> 'net_cgst_paise', s ->> 'net_sgst_paise', s ->> 'net_taxable_paise'));
   -- expect: card 15000/0, cash 99000/9000, upi 30000/0
   insert into r(check_name,outcome) values ('R2 money by method, including a deposit on an unbilled order',
     (select string_agg((e ->> 'method') || ' ' || (e ->> 'received_paise') || '/' || (e ->> 'refunded_paise'), ', ' order by n)

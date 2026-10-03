@@ -2,19 +2,19 @@ import "server-only";
 import { cookies } from "next/headers";
 import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/server";
-import { DEVICE_COOKIE, PIN_COOKIE, hashDeviceToken, readPinSession, signPinSession, type PinSession } from "@/lib/pin-cookie";
+import { DEVICE_COOKIE, hashDeviceToken } from "@/lib/pin-cookie";
 
-// Kitchen tablets (5D). The PIN check, the chef list and the session check need the service-role
-// key (SUPABASE_SECRET_KEY); without it PIN sign-in is simply unavailable.
+// Kitchen tablets (5D). The PIN check, the chef list and the login check need the service-role key
+// (SUPABASE_SECRET_KEY); without it PIN sign-in is simply unavailable.
 
 const YEAR = 400 * 24 * 60 * 60; // the longest cookie lifetime browsers keep (400 days)
 
-const cookieOptions = (maxAge?: number) => ({
+const cookieOptions = (maxAge: number) => ({
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
   sameSite: "lax" as const,
   path: "/",
-  ...(maxAge ? { maxAge } : {}),
+  maxAge,
 });
 
 export const pinSignInAvailable = () => Boolean(env.supabaseSecretKey);
@@ -46,34 +46,30 @@ export async function setDeviceCookie(token: string) {
   (await cookies()).set(DEVICE_COOKIE, token, cookieOptions(YEAR));
 }
 
-export async function setPinSession(session: PinSession) {
-  (await cookies()).set(PIN_COOKIE, signPinSession(session, env.supabaseSecretKey!), cookieOptions());
-}
-
-export async function clearPinSession() {
-  (await cookies()).delete(PIN_COOKIE);
-}
-
-export async function hasPinSession(): Promise<boolean> {
-  return Boolean((await cookies()).get(PIN_COOKIE)?.value);
-}
-
-// For a signed-in chef: "none" when they did not sign in by PIN (email and password), "ok" while the
-// tablet is still registered and their PIN unchanged, "invalid" otherwise (revoked tablet, PIN reset
-// or cleared, chef moved or deactivated, a forged cookie, or PIN sign-in no longer configured).
-export async function pinSessionStatus(userId: string): Promise<"none" | "ok" | "invalid"> {
-  const value = (await cookies()).get(PIN_COOKIE)?.value;
-  if (!value) return "none";
-  if (!pinSignInAvailable()) return "invalid";
-  const session = readPinSession(value, env.supabaseSecretKey!);
-  const hash = await deviceTokenHash();
-  if (!session || !hash || session.userId !== userId) return "invalid";
-  const { data, error } = await createAdminClient().rpc("kitchen_pin_session_valid", {
-    p_token_hash: hash,
+// Records a login just opened by PIN, so the database can end it and recognise it later.
+export async function recordPinSession(sessionId: string, deviceId: string, userId: string, signedInAt: string) {
+  const { error } = await createAdminClient().rpc("record_kitchen_pin_session", {
+    p_session_id: sessionId,
+    p_device_id: deviceId,
     p_user_id: userId,
-    p_signed_in_at: session.signedInAt,
+    p_signed_in_at: signedInAt,
   });
-  // A failed check (database or network trouble) keeps the chef signed in; only a definite "no" ends it.
-  if (error) return "ok";
-  return data === true ? "ok" : "invalid";
+  return !error;
+}
+
+// For a signed-in chef's login: "none" when it was not opened by PIN (email and password), "ok"
+// while it is on the tablet it was opened on, that tablet is still registered and the PIN unchanged,
+// "invalid" otherwise (revoked tablet, PIN reset or removed, chef moved or deactivated, or the login
+// used from another browser). Decided by the database from the login's session id, so losing or
+// deleting cookies cannot turn a PIN login into an unchecked one.
+export async function pinSessionStatus(sessionId: string | null): Promise<"none" | "ok" | "invalid"> {
+  if (!sessionId || !pinSignInAvailable()) return "none";
+  const { data, error } = await createAdminClient().rpc("kitchen_pin_session_status", {
+    p_session_id: sessionId,
+    p_token_hash: (await deviceTokenHash()) ?? "",
+  });
+  // A failed check (database or network trouble) keeps the chef signed in; only a definite "invalid"
+  // ends the login (owner's choice of availability over a few seconds' delay).
+  if (error) return "none";
+  return data === "ok" || data === "invalid" ? data : "none";
 }

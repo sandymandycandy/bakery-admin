@@ -26,6 +26,20 @@ insert into public.staff_kitchens (user_id, kitchen_id)
 insert into public.staff_kitchens (user_id, kitchen_id)
   select '00000000-0000-0000-0000-000000000bf3'::uuid, id from public.kitchens where code = 'TP1';
 insert into ctx select 'K1', id::text from public.kitchens where code = 'TP1';
+-- Login sessions: S1 and S3 will be PIN sessions on the tablet, S2 an ordinary email login of the same chef.
+insert into auth.sessions (id, user_id) values
+ ('00000000-0000-0000-0000-0000000005a1', '00000000-0000-0000-0000-000000000bf1'),
+ ('00000000-0000-0000-0000-0000000005a2', '00000000-0000-0000-0000-000000000bf1'),
+ ('00000000-0000-0000-0000-0000000005a3', '00000000-0000-0000-0000-000000000bf1');
+-- (The checks below look at auth.sessions as the service role.)
+grant usage on schema auth to service_role;
+grant select on auth.sessions to service_role;
+create function pg_temp.sess(p_last text) returns uuid language sql immutable as $$
+  select ('00000000-0000-0000-0000-0000000005a' || p_last)::uuid
+$$;
+create function pg_temp.alive(p_last text) returns text language sql stable as $$
+  select exists (select 1 from auth.sessions where id = pg_temp.sess(p_last))::text
+$$;
 -- Two tablet tokens' hashes (any 64 hex characters).
 insert into ctx values ('H1', repeat('a1', 32)), ('H2', repeat('b2', 32));
 
@@ -117,10 +131,14 @@ begin
   insert into r(check_name,outcome) values ('P10 the right PIN on a registered tablet of the chef''s kitchen',
     pg_temp.verify(h1, '00000000-0000-0000-0000-000000000bf1', '1234'));
   x := public.verify_kitchen_pin(h1, '00000000-0000-0000-0000-000000000bf1', '1234');
-  -- expect: true / true
-  insert into r(check_name,outcome) values ('P10b the answer carries the database sign-in time, valid for the session check',
+  perform public.record_kitchen_pin_session(pg_temp.sess('1'), (x ->> 'device_id')::uuid,
+    '00000000-0000-0000-0000-000000000bf1', (x ->> 'signed_in_at')::timestamptz);
+  -- expect: true / ok / none / invalid
+  insert into r(check_name,outcome) values ('P10b a recorded PIN session is checked against its own tablet',
     ((x ->> 'signed_in_at')::timestamptz = now())::text || ' / '
-    || public.kitchen_pin_session_valid(h1, '00000000-0000-0000-0000-000000000bf1', (x ->> 'signed_in_at')::timestamptz)::text);
+    || public.kitchen_pin_session_status(pg_temp.sess('1'), h1) || ' / '
+    || public.kitchen_pin_session_status(pg_temp.sess('2'), h1) || ' / '
+    || public.kitchen_pin_session_status(pg_temp.sess('1'), (select v from ctx where k = 'H2')));
   -- (Each check runs first, then the count is read in its own statement, after the update.)
   got := pg_temp.verify(h1, '00000000-0000-0000-0000-000000000bf1', '4321');
   -- expect: refused / 1
@@ -140,10 +158,10 @@ begin
   insert into r(check_name,outcome) values ('P14 the tablet lists the active chefs of its kitchen',
     (x -> 'kitchen' ->> 'name') || ' / '
     || (select string_agg((c ->> 'full_name') || ':' || (c ->> 'has_pin'), ', ') from jsonb_array_elements(x -> 'chefs') c));
-  -- expect: true / false
-  insert into r(check_name,outcome) values ('P15 a session is valid until the PIN changes',
-    public.kitchen_pin_session_valid(h1, '00000000-0000-0000-0000-000000000bf1', now() + interval '1 second')::text || ' / '
-    || public.kitchen_pin_session_valid(h1, '00000000-0000-0000-0000-000000000bf1', now() - interval '1 minute')::text);
+  -- expect: ok / invalid
+  insert into r(check_name,outcome) values ('P15 a PIN session without its tablet cookie is not an email session',
+    public.kitchen_pin_session_status(pg_temp.sess('1'), h1) || ' / '
+    || public.kitchen_pin_session_status(pg_temp.sess('1'), null));
 end $$;
 
 -- Admin clears Chef Two's PIN and revokes the tablet.
@@ -157,19 +175,39 @@ begin
   insert into r(check_name,outcome) values ('P16 clearing a PIN is audited',
     (select string_agg(distinct action, ',' order by action) from public.audit_events where table_name = 'staff_pins'));
   perform public.set_staff_pin('00000000-0000-0000-0000-000000000bf1', '2468');
-  perform public.revoke_kitchen_device((select v::uuid from ctx where k = 'D1'));
 end $$;
+
+reset role;
+set local role service_role;
+do $$
+declare h1 text := (select v from ctx where k = 'H1'); x jsonb;
+begin
+  -- expect: invalid / false / true
+  insert into r(check_name,outcome) values ('P16b a PIN reset ends the chef''s PIN logins but not their email login',
+    public.kitchen_pin_session_status(pg_temp.sess('1'), h1) || ' / ' || pg_temp.alive('1') || ' / ' || pg_temp.alive('2'));
+  x := public.verify_kitchen_pin(h1, '00000000-0000-0000-0000-000000000bf1', '2468');
+  perform public.record_kitchen_pin_session(pg_temp.sess('3'), (x ->> 'device_id')::uuid,
+    '00000000-0000-0000-0000-000000000bf1', (x ->> 'signed_in_at')::timestamptz);
+  -- expect: ok
+  insert into r(check_name,outcome) values ('P16c the new PIN opens a new PIN session',
+    public.kitchen_pin_session_status(pg_temp.sess('3'), h1));
+end $$;
+
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000ba1","role":"authenticated"}', true);
+do $$ begin perform public.revoke_kitchen_device((select v::uuid from ctx where k = 'D1')); end $$;
 
 reset role;
 set local role service_role;
 do $$
 declare h1 text := (select v from ctx where k = 'H1');
 begin
-  -- expect: refused / null / false
-  insert into r(check_name,outcome) values ('P17 a revoked tablet takes no PINs, lists no chefs, ends sessions',
+  -- expect: refused / null / invalid / false / true
+  insert into r(check_name,outcome) values ('P17 a revoked tablet takes no PINs, lists no chefs and ends its logins',
     pg_temp.verify(h1, '00000000-0000-0000-0000-000000000bf1', '2468') || ' / '
     || coalesce(public.kitchen_device_chefs(h1)::text, 'null') || ' / '
-    || public.kitchen_pin_session_valid(h1, '00000000-0000-0000-0000-000000000bf1', now() + interval '1 second')::text);
+    || public.kitchen_pin_session_status(pg_temp.sess('3'), h1) || ' / ' || pg_temp.alive('3') || ' / ' || pg_temp.alive('2'));
 end $$;
 
 reset role;

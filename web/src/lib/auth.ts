@@ -8,6 +8,7 @@ export type StaffRole = Enums<"staff_role">;
 
 export type Staff = {
   userId: string;
+  sessionId: string | null; // Supabase login session (used to recognise kitchen-tablet PIN logins)
   email: string | null;
   fullName: string;
   role: StaffRole;
@@ -30,6 +31,7 @@ export const getStaff = cache(async (): Promise<Staff | null> => {
 
   return {
     userId: claims.sub,
+    sessionId: typeof claims.session_id === "string" ? claims.session_id : null,
     email: typeof claims.email === "string" ? claims.email : null,
     fullName: profile.full_name,
     role: profile.role,

@@ -23,6 +23,12 @@ create table auth.users (
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+-- Login sessions (Supabase keeps one row per signed-in device; refresh tokens hang off them).
+create table auth.sessions (
+  id uuid primary key,
+  user_id uuid references auth.users (id) on delete cascade,
+  created_at timestamptz default now()
+);
 create function auth.uid() returns uuid language sql stable as $$
   select nullif(coalesce(
     current_setting('request.jwt.claim.sub', true),

@@ -14,6 +14,8 @@ const sample = parseSalesReport({
   summary: {
     bills: 2, gross_paise: 159000, discount_paise: 10000, billed_paise: 149000, tax_paise: 8040,
     credit_notes: 1, credited_paise: 9000, credited_tax_paise: 429, net_paise: 140000, net_tax_paise: 7611,
+    cgst_paise: 4019, sgst_paise: 4021, taxable_paise: 140960, credited_cgst_paise: 214, credited_sgst_paise: 215,
+    credited_taxable_paise: 8571, net_cgst_paise: 3805, net_sgst_paise: 3806, net_taxable_paise: 132389,
   },
   money: [{ method: "cash", received_paise: 99000, refunded_paise: 9050 }],
   products: [{ name: 'Cake, "Choco"', variant: "1 kg", quantity: 3, gross_paise: 150000, discount_paise: 10000, net_paise: 140000 }],
@@ -27,6 +29,9 @@ test("CSV keeps commas and quotes in one column and writes rupees with two decim
   assert.ok(csv.includes("Cash,990.00,90.50,899.50"));
   assert.ok(csv.includes("In-store,1,990.00,90.00,900.00"));
   assert.ok(csv.includes("Net sales,1400.00"));
+  assert.ok(csv.includes("Taxable value (net),1323.89"));
+  assert.ok(csv.includes("CGST (net),38.05"));
+  assert.ok(csv.includes("SGST (net),38.06"));
 });
 
 test("CSV sections come in a fixed order", () => {

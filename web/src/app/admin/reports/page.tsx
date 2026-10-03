@@ -125,7 +125,11 @@ export default async function ReportsPage({ searchParams }: PageProps<"/admin/re
                     value={formatPaise(s.credited_paise)}
                     hint={`${s.credit_notes} issued`}
                   />
-                  <Tile label="GST on net sales" value={formatPaise(s.net_tax_paise)} hint={`Bills ${formatPaise(s.tax_paise)}, credit notes ${formatPaise(s.credited_tax_paise)}`} />
+                  <Tile
+                    label="GST on net sales"
+                    value={formatPaise(s.net_tax_paise)}
+                    hint={`CGST ${formatPaise(s.net_cgst_paise)} · SGST ${formatPaise(s.net_sgst_paise)} · taxable ${formatPaise(s.net_taxable_paise)}`}
+                  />
                   <Tile
                     label="Net collected"
                     value={formatPaise(report.money.reduce((t, m) => t + m.received_paise - m.refunded_paise, 0))}

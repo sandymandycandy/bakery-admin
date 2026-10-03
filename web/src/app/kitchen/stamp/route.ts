@@ -12,7 +12,7 @@ export async function GET() {
   const staff = await getStaff();
   if (!staff) return NextResponse.json({ error: "signed_out" }, { status: 401 });
   // A PIN session ends within one refresh of the tablet being revoked or the PIN being reset (AC-34).
-  if (staff.role === "chef" && (await pinSessionStatus(staff.userId)) === "invalid") {
+  if (staff.role === "chef" && (await pinSessionStatus(staff.sessionId)) === "invalid") {
     return NextResponse.json({ error: "signed_out" }, { status: 401 });
   }
   try {

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { homePathFor } from "@/lib/auth";
-import { clearPinSession, currentTablet } from "@/lib/kitchen-device";
+import { currentTablet } from "@/lib/kitchen-device";
 import type { ActionState } from "@/components/form-status";
 
 const schema = z.object({
@@ -52,8 +52,8 @@ export async function signIn(_prev: ActionState, formData: FormData): Promise<Ac
 
 export async function signOut() {
   const supabase = await createClient();
-  await supabase.auth.signOut();
-  await clearPinSession();
+  // This device only: "Switch chef" on a tablet must not sign the chef out of their other devices.
+  await supabase.auth.signOut({ scope: "local" });
   // On a registered kitchen tablet, signing out (or "Switch chef") returns to the chef picker.
   redirect((await currentTablet()) ? "/kitchen/pin" : "/login");
 }

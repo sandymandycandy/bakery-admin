@@ -1057,9 +1057,13 @@ export type Database = {
         Args: { p_token_hash: string }
         Returns: Json
       }
-      kitchen_pin_session_valid: {
-        Args: { p_signed_in_at: string; p_token_hash: string; p_user_id: string }
-        Returns: boolean
+      record_kitchen_pin_session: {
+        Args: { p_device_id: string; p_session_id: string; p_signed_in_at: string; p_user_id: string }
+        Returns: undefined
+      }
+      kitchen_pin_session_status: {
+        Args: { p_session_id: string; p_token_hash: string }
+        Returns: string
       }
       sales_report: {
         Args: { p_from: string; p_to: string }

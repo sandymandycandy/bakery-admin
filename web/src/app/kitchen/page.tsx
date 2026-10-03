@@ -38,7 +38,7 @@ function Chip({ href, active, children }: { href: string; active: boolean; child
 export default async function KitchenPage({ searchParams }: PageProps<"/kitchen">) {
   const chef = await requireRole(["chef"]);
   // Signed in by PIN on a tablet: end the session at once if the tablet was revoked or the PIN reset.
-  const pinStatus = await pinSessionStatus(chef.userId);
+  const pinStatus = await pinSessionStatus(chef.sessionId);
   if (pinStatus === "invalid") redirect("/kitchen/pin/end");
   const params = await searchParams;
   const tab = str(params.tab) === "done" ? "done" : "active";
